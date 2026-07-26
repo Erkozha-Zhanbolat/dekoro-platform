@@ -13,10 +13,13 @@ export interface Product {
   id: string;
   name: string;
   sku: string;
+  originalSku: string;
   category: ProductCategory;
-  price: number;
+  dimensions: string | null;
   unit: string;
   stock: number;
+  reserved: number;
+  salePrice: number | null;
   image: string | null;
   isPromotion: boolean;
 }

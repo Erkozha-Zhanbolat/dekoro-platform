@@ -3,6 +3,7 @@
 import type { SVGProps } from "react";
 import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/lib/formatPrice";
+import { getAvailableStock } from "@/lib/inventory";
 import type { Product } from "@/types/product";
 
 function ImagePlaceholderIcon(props: SVGProps<SVGSVGElement>) {
@@ -26,7 +27,8 @@ function ImagePlaceholderIcon(props: SVGProps<SVGSVGElement>) {
 
 export default function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
-  const isOutOfStock = product.stock === 0;
+  const availableStock = getAvailableStock(product);
+  const isOutOfStock = availableStock <= 0;
 
   return (
     <div className="flex flex-col rounded-lg border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm">
@@ -46,12 +48,25 @@ export default function ProductCard({ product }: { product: Product }) {
         {product.name}
       </h3>
       <p className="mt-1 text-xs text-neutral-500">Артикул: {product.sku}</p>
+      {product.dimensions && (
+        <p className="mt-0.5 text-xs text-neutral-500">
+          Размер: {product.dimensions}
+        </p>
+      )}
 
       <div className="mt-3 flex items-baseline gap-1">
-        <span className="text-lg font-bold text-neutral-800">
-          {formatPrice(product.price)}
-        </span>
-        <span className="text-xs text-neutral-500">/ {product.unit}</span>
+        {product.salePrice === null ? (
+          <span className="text-sm font-medium text-neutral-500">
+            Цена доступна после авторизации
+          </span>
+        ) : (
+          <>
+            <span className="text-lg font-bold text-neutral-800">
+              {formatPrice(product.salePrice)}
+            </span>
+            <span className="text-xs text-neutral-500">/ {product.unit}</span>
+          </>
+        )}
       </div>
 
       <p
@@ -59,7 +74,7 @@ export default function ProductCard({ product }: { product: Product }) {
       >
         {isOutOfStock
           ? "Нет в наличии"
-          : `В наличии: ${product.stock} ${product.unit}`}
+          : `В наличии: ${availableStock} ${product.unit}`}
       </p>
 
       <button

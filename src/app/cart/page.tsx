@@ -10,6 +10,9 @@ const focusRing =
 export default function CartPage() {
   const { items, totalAmount, increaseQuantity, decreaseQuantity, removeItem } =
     useCart();
+  const hasPendingPriceItems = items.some(
+    (item) => item.product.salePrice === null,
+  );
 
   if (items.length === 0) {
     return (
@@ -44,7 +47,13 @@ export default function CartPage() {
                 Артикул: {item.product.sku}
               </p>
               <p className="mt-1 text-sm text-neutral-600">
-                {formatPrice(item.product.price)} / {item.product.unit}
+                {item.product.salePrice === null ? (
+                  <span className="text-neutral-500">Цена уточняется</span>
+                ) : (
+                  <>
+                    {formatPrice(item.product.salePrice)} / {item.product.unit}
+                  </>
+                )}
               </p>
             </div>
 
@@ -71,8 +80,10 @@ export default function CartPage() {
                 </button>
               </div>
 
-              <span className="w-24 text-right text-sm font-semibold text-neutral-800">
-                {formatPrice(item.product.price * item.quantity)}
+              <span className="w-28 shrink-0 text-right text-sm font-semibold text-neutral-800">
+                {item.product.salePrice === null
+                  ? "Цена уточняется"
+                  : formatPrice(item.product.salePrice * item.quantity)}
               </span>
 
               <button
@@ -93,6 +104,11 @@ export default function CartPage() {
         <span className="text-2xl font-bold text-neutral-800">
           {formatPrice(totalAmount)}
         </span>
+        {hasPendingPriceItems && (
+          <span className="text-xs text-neutral-400">
+            Сумма рассчитана без учёта товаров с уточняемой ценой
+          </span>
+        )}
       </div>
     </div>
   );
