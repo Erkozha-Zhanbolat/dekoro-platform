@@ -1,0 +1,95 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import type { FormEvent } from "react";
+import { useAuth } from "@/context/AuthContext";
+
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const { signIn } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+
+    const { error: signInError } = await signIn(email.trim(), password);
+
+    setIsSubmitting(false);
+
+    if (signInError) {
+      setError("Неверный email или пароль");
+      return;
+    }
+
+    router.push("/profile");
+  }
+
+  return (
+    <div className="mx-auto max-w-md px-6 py-16">
+      <h1 className="text-3xl font-bold text-neutral-800">Вход</h1>
+      <p className="mt-2 text-sm text-neutral-600">
+        Войдите в личный кабинет, чтобы отслеживать заказы и данные компании.
+      </p>
+
+      <form onSubmit={handleSubmit} noValidate className="mt-8 flex flex-col gap-4">
+        <div>
+          <label htmlFor="login-email" className="block text-sm font-medium text-neutral-700">
+            Email
+          </label>
+          <input
+            id="login-email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className={`mt-1 w-full rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] ${focusRing}`}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="login-password" className="block text-sm font-medium text-neutral-700">
+            Пароль
+          </label>
+          <input
+            id="login-password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className={`mt-1 w-full rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] ${focusRing}`}
+          />
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className={`mt-2 rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
+        >
+          {isSubmitting ? "Входим..." : "Войти"}
+        </button>
+      </form>
+
+      <p className="mt-6 text-sm text-neutral-600">
+        Нет аккаунта?{" "}
+        <Link href="/register" className={`font-medium text-[#0F766E] hover:underline ${focusRing}`}>
+          Зарегистрироваться
+        </Link>
+      </p>
+    </div>
+  );
+}

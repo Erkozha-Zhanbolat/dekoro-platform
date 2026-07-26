@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { SVGProps } from "react";
 import { useCart } from "@/context/CartContext";
+import { useAuth } from "@/context/AuthContext";
 
 const primaryLinks = [
   { href: "/catalog", label: "Каталог" },
@@ -132,6 +133,8 @@ function SearchField({ id }: { id: string }) {
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { totalQuantity } = useCart();
+  const { user } = useAuth();
+  const profileHref = user ? "/profile" : "/login";
 
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
@@ -188,7 +191,7 @@ export default function Header() {
               Корзина
             </Link>
             <Link
-              href="/profile"
+              href={profileHref}
               className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
             >
               <ProfileIcon className="h-5 w-5" />
@@ -252,7 +255,7 @@ export default function Header() {
               Мои заказы
             </Link>
             <Link
-              href="/profile"
+              href={profileHref}
               onClick={() => setIsMenuOpen(false)}
               className={`rounded-md px-2 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 hover:text-[#0F766E] ${focusRing}`}
             >
