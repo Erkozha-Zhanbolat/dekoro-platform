@@ -6,11 +6,13 @@ import type { SVGProps } from "react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useFavorites } from "@/context/FavoritesContext";
-import { useSupabaseCatalog, useSupabaseFavorites } from "@/lib/featureFlags";
+import { enableQuickOrder, useSupabaseCatalog, useSupabaseFavorites } from "@/lib/featureFlags";
 
+// Shared by both the desktop nav and the mobile menu below, so the Quick
+// Order link only needs to be added/removed here, once, to affect both.
 const primaryLinks = [
   { href: "/catalog", label: "Каталог" },
-  { href: "/quick-order", label: "Быстрый заказ" },
+  ...(enableQuickOrder ? [{ href: "/quick-order", label: "Быстрый заказ" }] : []),
   { href: "/promotions", label: "Акции" },
 ];
 
