@@ -5,6 +5,8 @@ import { useState } from "react";
 import type { SVGProps } from "react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
+import { useFavorites } from "@/context/FavoritesContext";
+import { useSupabaseCatalog, useSupabaseFavorites } from "@/lib/featureFlags";
 
 const primaryLinks = [
   { href: "/catalog", label: "Каталог" },
@@ -47,6 +49,23 @@ function CartIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M3 4h2l2.4 12.4a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L20 8H6" />
       <circle cx="9" cy="20" r="1" />
       <circle cx="17" cy="20" r="1" />
+    </svg>
+  );
+}
+
+function HeartIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M12 20.5s-7.6-4.6-10.1-9.4C0.4 7.9 1.7 4.4 4.8 3.4c2.5-.8 5.1 0 7.2 2.6 2.1-2.6 4.7-3.4 7.2-2.6 3.1 1 4.4 4.5 2.9 7.7C19.6 15.9 12 20.5 12 20.5z" />
     </svg>
   );
 }
@@ -134,7 +153,15 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { totalQuantity } = useCart();
   const { user } = useAuth();
+  const { favoriteProductIds } = useFavorites();
   const profileHref = user ? "/profile" : "/login";
+  // Local (static catalog) favorites work for guests too, so the count is
+  // always shown there. In Supabase mode favorites are per signed-in user,
+  // so the count only makes sense once someone is authenticated.
+  const showFavoritesCount = !useSupabaseCatalog || !!user;
+  const favoritesLabel = showFavoritesCount
+    ? `Избранное (${favoriteProductIds.length})`
+    : "Избранное";
 
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
@@ -178,6 +205,15 @@ export default function Header() {
             >
               Мои заказы
             </Link>
+            {useSupabaseFavorites && (
+              <Link
+                href="/favorites"
+                className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
+              >
+                <HeartIcon className="h-5 w-5" />
+                {favoritesLabel}
+              </Link>
+            )}
             <Link
               href="/cart"
               className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
@@ -254,6 +290,15 @@ export default function Header() {
             >
               Мои заказы
             </Link>
+            {useSupabaseFavorites && (
+              <Link
+                href="/favorites"
+                onClick={() => setIsMenuOpen(false)}
+                className={`rounded-md px-2 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 hover:text-[#0F766E] ${focusRing}`}
+              >
+                {favoritesLabel}
+              </Link>
+            )}
             <Link
               href={profileHref}
               onClick={() => setIsMenuOpen(false)}

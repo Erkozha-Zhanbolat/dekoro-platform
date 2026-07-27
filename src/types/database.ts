@@ -128,6 +128,13 @@ export interface CompanyProductPrice {
   updated_at: string;
 }
 
+export interface Favorite {
+  id: string;
+  user_id: string;
+  product_id: string;
+  created_at: string;
+}
+
 // Row shape returned by the get_catalog() RPC (supabase/migrations/002_catalog_inventory_pricing.sql).
 export interface CatalogEntry {
   product_id: string;

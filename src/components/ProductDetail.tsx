@@ -1,52 +1,55 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import type { ChangeEvent } from "react";
+import { useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { getAvailableStock } from "@/lib/inventory";
 import { ProductImagePlaceholder } from "@/components/ProductImagePlaceholder";
+import { QuantitySelector } from "@/components/QuantitySelector";
+import FavoriteButton from "@/components/FavoriteButton";
+import { getFavoriteProductId } from "@/lib/favorites";
 import type { Product } from "@/types/product";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
 export default function ProductDetail({ product }: { product: Product }) {
-  const { addItem } = useCart();
+  const { items, addToCart } = useCart();
   const availableStock = getAvailableStock(product);
   const isOutOfStock = availableStock <= 0;
-  const maxQuantity = Math.max(availableStock, 1);
+
+  const quantityInCart = useMemo(
+    () => items.find((item) => item.product.id === product.id)?.quantity ?? 0,
+    [items, product.id],
+  );
+  const remainingCapacity = Math.max(availableStock - quantityInCart, 0);
+  const isFullyInCart = !isOutOfStock && remainingCapacity <= 0;
+  const isSelectionDisabled = isOutOfStock || isFullyInCart;
+  const maxSelectable = Math.max(remainingCapacity, 1);
+
   const [quantity, setQuantity] = useState(1);
+  const selectedQuantity = Math.min(quantity, maxSelectable);
+  const isAtCapacity = !isSelectionDisabled && selectedQuantity >= remainingCapacity;
 
-  function clampQuantity(value: number): number {
-    if (!Number.isFinite(value)) {
-      return 1;
-    }
-    return Math.min(Math.max(1, Math.trunc(value)), maxQuantity);
-  }
-
-  function handleDecrease() {
-    setQuantity((current) => clampQuantity(current - 1));
-  }
-
-  function handleIncrease() {
-    setQuantity((current) => clampQuantity(current + 1));
-  }
-
-  function handleQuantityChange(event: ChangeEvent<HTMLInputElement>) {
-    setQuantity(clampQuantity(Number(event.target.value)));
+  function handleQuantityChange(value: number) {
+    setQuantity(Math.min(Math.max(value, 1), maxSelectable));
   }
 
   function handleAddToCart() {
-    if (isOutOfStock) {
+    if (isSelectionDisabled) {
       return;
     }
-    addItem(product, quantity);
+    const quantityToAdd = Math.min(selectedQuantity, remainingCapacity);
+    if (quantityToAdd <= 0) {
+      return;
+    }
+    addToCart(product, quantityToAdd);
+    setQuantity(1);
   }
 
   const totalForQuantity =
-    product.salePrice === null ? null : product.salePrice * quantity;
+    product.salePrice === null ? null : product.salePrice * selectedQuantity;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
@@ -85,6 +88,16 @@ export default function ProductDetail({ product }: { product: Product }) {
               ? "Нет в наличии"
               : `В наличии: ${availableStock} ${product.unit}`}
           </p>
+          {isFullyInCart && (
+            <p className="mt-1 text-sm text-amber-600">
+              Весь доступный остаток уже в корзине
+            </p>
+          )}
+          {!isFullyInCart && isAtCapacity && (
+            <p className="mt-1 text-sm text-amber-600">
+              Доступно только: {remainingCapacity} {product.unit}
+            </p>
+          )}
 
           <div className="mt-6 border-t border-neutral-200 pt-6">
             {product.salePrice === null ? (
@@ -107,38 +120,14 @@ export default function ProductDetail({ product }: { product: Product }) {
             <span className="text-sm font-medium text-neutral-700">
               Количество
             </span>
-            <div className="flex items-center rounded-md border border-neutral-200">
-              <button
-                type="button"
-                onClick={handleDecrease}
-                disabled={isOutOfStock || quantity <= 1}
-                aria-label="Уменьшить количество"
-                className={`flex h-9 w-9 items-center justify-center text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-[#0F766E] disabled:cursor-not-allowed disabled:text-neutral-300 disabled:hover:bg-transparent ${focusRing}`}
-              >
-                −
-              </button>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={maxQuantity}
-                step={1}
-                value={quantity}
-                onChange={handleQuantityChange}
-                disabled={isOutOfStock}
-                aria-label="Количество"
-                className={`h-9 w-14 border-x border-neutral-200 text-center text-sm font-medium text-neutral-800 outline-none disabled:bg-neutral-50 disabled:text-neutral-300 ${focusRing}`}
-              />
-              <button
-                type="button"
-                onClick={handleIncrease}
-                disabled={isOutOfStock || quantity >= maxQuantity}
-                aria-label="Увеличить количество"
-                className={`flex h-9 w-9 items-center justify-center text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-[#0F766E] disabled:cursor-not-allowed disabled:text-neutral-300 disabled:hover:bg-transparent ${focusRing}`}
-              >
-                +
-              </button>
-            </div>
+            <QuantitySelector
+              value={selectedQuantity}
+              onChange={handleQuantityChange}
+              min={1}
+              max={maxSelectable}
+              unit={product.unit}
+              disabled={isSelectionDisabled}
+            />
           </div>
 
           {totalForQuantity !== null && (
@@ -150,14 +139,17 @@ export default function ProductDetail({ product }: { product: Product }) {
             </p>
           )}
 
-          <button
-            type="button"
-            onClick={handleAddToCart}
-            disabled={isOutOfStock}
-            className={`mt-6 rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 ${focusRing}`}
-          >
-            {isOutOfStock ? "Нет в наличии" : "Добавить в корзину"}
-          </button>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleAddToCart}
+              disabled={isSelectionDisabled}
+              className={`rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 ${focusRing}`}
+            >
+              {isOutOfStock ? "Нет в наличии" : "Добавить в корзину"}
+            </button>
+            <FavoriteButton productId={getFavoriteProductId(product)} variant="labeled" />
+          </div>
         </div>
       </div>
 

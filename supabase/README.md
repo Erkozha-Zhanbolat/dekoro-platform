@@ -7,14 +7,43 @@ yourself in the Supabase SQL Editor, in order.
 
 ## Run order
 
+Favorites (`NEXT_PUBLIC_USE_SUPABASE_FAVORITES`) works in **two independent
+modes** — see "Favorites feature flag" below. You only need to run
+`003_favorites.sql` if you intend to switch the catalog to Supabase too.
+
+**Current default setup (static catalog + local favorites) — no SQL to run:**
+
+1. `.env.local` stays at:
+   ```
+   NEXT_PUBLIC_USE_SUPABASE_CATALOG=false
+   NEXT_PUBLIC_USE_SUPABASE_FAVORITES=true
+   ```
+2. `npm run dev` — the 20 static products from `src/data/products.ts` are
+   shown as before, each with a working heart button. Favorites are stored
+   in this browser's `localStorage`, for guests and signed-in users alike.
+
+**Full Supabase catalog + Supabase favorites (future step, once the catalog
+migration is verified):**
+
 1. Run `supabase/migrations/001_companies_and_profiles.sql`.
 2. Run `supabase/migrations/002_catalog_inventory_pricing.sql`.
 3. Run `supabase/seed/001_catalog_demo.sql`.
-4. Check the tables (see "Verifying the result" below for both migrations).
-5. Set `NEXT_PUBLIC_USE_SUPABASE_CATALOG=true` in `.env.local`.
+4. Run `supabase/migrations/003_favorites.sql`.
+5. Set in `.env.local`:
+   ```
+   NEXT_PUBLIC_USE_SUPABASE_CATALOG=true
+   NEXT_PUBLIC_USE_SUPABASE_FAVORITES=true
+   ```
 6. Restart `npm run dev`.
-7. Check `/catalog`, a product page, and `/cart` — they should look exactly
-   the same as with the static catalog, just now backed by Supabase.
+7. Register or sign in (favorites now require a signed-in user).
+8. Add a product to favorites (heart icon on a product card or product page).
+9. Check the `favorites` table in the Table Editor.
+10. Open `/favorites`.
+11. Remove a product from favorites and confirm it disappears immediately.
+
+Steps 1–3 alone (without step 4 or the flags) leave the app exactly as it
+was before this catalog work — `/catalog`, `/product/[id]` and `/cart`
+should look identical to the static catalog either way.
 
 Each SQL file starts with a small guard block that raises a clear error if
 you run it out of order (e.g. running `002_...` before `001_...`).
@@ -190,6 +219,62 @@ the Supabase client loaded) rather than from the SQL Editor.
 
 ---
 
+## Migration 003: favorites
+
+Only needed once the catalog is switched to Supabase
+(`NEXT_PUBLIC_USE_SUPABASE_CATALOG=true`). With the current static catalog,
+favorites are stored in `localStorage` instead (see "Favorites feature
+flag" below) and this migration is not required at all.
+
+### What it creates
+
+- `public.favorites`: `id`, `user_id` (references `auth.users`), `product_id`
+  (references `public.products`), `created_at`, with a `unique(user_id,
+  product_id)` constraint (so a user can't favorite the same product twice)
+  and indexes on both `user_id` and `product_id`.
+
+### Row Level Security
+
+RLS is enabled. A user can only ever see, add, or remove **their own**
+favorites — there is no way for one client to read or change another
+user's favorites:
+
+| Operation | Who | Condition |
+| --------- | --- | --------- |
+| SELECT | `authenticated` only | `user_id = auth.uid()` |
+| INSERT | `authenticated` only | `user_id = auth.uid()` |
+| DELETE | `authenticated` only | `user_id = auth.uid()` |
+| UPDATE | nobody | no policy, no grant — not needed (a favorite is only ever added or removed, never edited) |
+| any operation | `anon` | denied — guests can't read or write favorites at all |
+
+### Verifying the result
+
+```sql
+select table_name from information_schema.tables
+where table_schema = 'public' and table_name = 'favorites';
+
+select relrowsecurity from pg_class where relname = 'favorites';
+-- should be true
+
+select polname, cmd from pg_policies
+where schemaname = 'public' and tablename = 'favorites'
+order by polname;
+-- favorites_select_own (select), favorites_insert_own (insert),
+-- favorites_delete_own (delete) — no update policy
+
+select *
+from public.favorites
+order by created_at desc;
+```
+
+Running that last query as two different signed-in users (e.g. in two
+browser sessions) should each only ever return that user's own rows when
+called through the app (with `auth.uid()` set) — RLS means a user genuinely
+cannot see another company's or user's favorites, not just that the UI
+hides them.
+
+---
+
 ## Seed: demo catalog data
 
 `supabase/seed/001_catalog_demo.sql` inserts:
@@ -226,6 +311,50 @@ The app reads `NEXT_PUBLIC_USE_SUPABASE_CATALOG` (see `.env.example`):
 Set the flag in `.env.local` and restart `npm run dev` for it to take
 effect (it's a build-time `NEXT_PUBLIC_*` variable).
 
+## Favorites feature flag
+
+`NEXT_PUBLIC_USE_SUPABASE_FAVORITES` (see `.env.example`) controls the heart
+button, the favorites count in the header, and the `/favorites` page. It is
+now **independent** of `NEXT_PUBLIC_USE_SUPABASE_CATALOG`:
+
+```ts
+// src/lib/featureFlags.ts
+export const useSupabaseCatalog = process.env.NEXT_PUBLIC_USE_SUPABASE_CATALOG === "true";
+export const useSupabaseFavorites = process.env.NEXT_PUBLIC_USE_SUPABASE_FAVORITES === "true";
+```
+
+`FavoritesContext` (`src/context/FavoritesContext.tsx`) picks its storage
+backend from `useSupabaseCatalog` alone, at render time:
+
+| `useSupabaseCatalog` | Storage | Requires sign-in? |
+| --- | --- | --- |
+| `false` (current default) | `localStorage`, key `dekoro_static_favorites` (see `src/lib/favorites.ts`) | No — guests and signed-in users both get their own favorites, scoped to this browser |
+| `true` | `public.favorites` table via Supabase (RLS-scoped to the signed-in user) | Yes — `FavoriteButton` shows a "sign in" hint for guests instead of calling Supabase |
+
+`NEXT_PUBLIC_USE_SUPABASE_FAVORITES` on its own just turns the whole feature
+on/off (heart button rendered or not, "Избранное" link shown or not,
+`/favorites` reachable or not) — it does **not** decide which storage is
+used; that's always `useSupabaseCatalog`.
+
+Because products from the static catalog don't have a database id,
+favorites are tracked by a stable identifier from
+`src/lib/favorites.ts#getFavoriteProductId`:
+
+```ts
+export function getFavoriteProductId(product: Product): string {
+  return useSupabaseCatalog ? product.id : product.sku;
+}
+```
+
+- Supabase catalog: `product.id` is the real `products.id` UUID.
+- Static catalog: `product.id` is just a local slug (not a DB key), so the
+  **SKU** is used instead — stable and unique per product, never an array
+  index or the product name.
+
+`src/lib/featureFlags.ts` remains the single place both flags are computed
+— other files import `useSupabaseCatalog` / `useSupabaseFavorites` from
+there instead of re-reading `process.env` themselves.
+
 ## Supabase Storage (future step)
 
 No storage bucket is created yet. `product_images.image_url` is a plain
@@ -245,3 +374,7 @@ objects in that bucket instead of external URLs.
 - The static catalog (`src/data/products.ts`) has not been deleted — it
   remains the default data source until the Supabase catalog is fully
   verified and the feature flag is flipped intentionally.
+- Favorites for products that later become `draft`/`archived`/deleted are
+  not proactively cleaned up. `get_catalog()` only returns active products,
+  so `/favorites` simply won't show a stale favorite — the leftover
+  `favorites` row itself is harmless and can be swept up in a later step.

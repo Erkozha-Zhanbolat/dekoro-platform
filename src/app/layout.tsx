@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import { AuthProvider } from "@/context/AuthContext";
 import { ProfileProvider } from "@/context/ProfileContext";
 import { CatalogProvider } from "@/context/CatalogContext";
+import { FavoritesProvider } from "@/context/FavoritesContext";
 import { CartProvider } from "@/context/CartContext";
 import { OrderProvider } from "@/context/OrderContext";
 import "./globals.css";
@@ -39,13 +40,15 @@ export default function RootLayout({
         <AuthProvider>
           <ProfileProvider>
             <CatalogProvider>
-              <CartProvider>
-                <OrderProvider>
-                  <Header />
-                  <main className="flex-1">{children}</main>
-                  <Footer />
-                </OrderProvider>
-              </CartProvider>
+              <FavoritesProvider>
+                <CartProvider>
+                  <OrderProvider>
+                    <Header />
+                    <main className="flex-1">{children}</main>
+                    <Footer />
+                  </OrderProvider>
+                </CartProvider>
+              </FavoritesProvider>
             </CatalogProvider>
           </ProfileProvider>
         </AuthProvider>
