@@ -28,3 +28,117 @@ export interface Profile {
   created_at: string;
   updated_at: string;
 }
+
+export type ProductStatus = "draft" | "active" | "archived";
+
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image_url: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Product {
+  id: string;
+  category_id: string | null;
+  name: string;
+  slug: string;
+  sku: string;
+  original_sku: string | null;
+  description: string | null;
+  dimensions: string | null;
+  unit: string;
+  base_price: number | null;
+  status: ProductStatus;
+  is_promotion: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductImage {
+  id: string;
+  product_id: string;
+  image_url: string;
+  alt_text: string | null;
+  sort_order: number;
+  is_primary: boolean;
+  created_at: string;
+}
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  code: string;
+  address: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Inventory {
+  id: string;
+  product_id: string;
+  warehouse_id: string;
+  quantity: number;
+  reserved_quantity: number;
+  updated_at: string;
+}
+
+export interface ProductAvailability {
+  product_id: string;
+  warehouse_id: string;
+  quantity: number;
+  reserved_quantity: number;
+  available_quantity: number;
+}
+
+export interface PriceGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductPrice {
+  id: string;
+  product_id: string;
+  price_group_id: string;
+  price: number;
+  valid_from: string | null;
+  valid_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyProductPrice {
+  id: string;
+  company_id: string;
+  product_id: string;
+  price: number;
+  valid_from: string | null;
+  valid_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Row shape returned by the get_catalog() RPC (supabase/migrations/002_catalog_inventory_pricing.sql).
+export interface CatalogEntry {
+  product_id: string;
+  name: string;
+  sku: string;
+  original_sku: string | null;
+  category: string | null;
+  dimensions: string | null;
+  unit: string;
+  available_stock: number;
+  sale_price: number | null;
+  image: string | null;
+  is_promotion: boolean;
+}

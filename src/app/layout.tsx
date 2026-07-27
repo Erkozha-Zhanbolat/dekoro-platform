@@ -4,6 +4,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { AuthProvider } from "@/context/AuthContext";
 import { ProfileProvider } from "@/context/ProfileContext";
+import { CatalogProvider } from "@/context/CatalogContext";
 import { CartProvider } from "@/context/CartContext";
 import { OrderProvider } from "@/context/OrderContext";
 import "./globals.css";
@@ -37,13 +38,15 @@ export default function RootLayout({
       <body className="flex min-h-full flex-col bg-white text-neutral-800">
         <AuthProvider>
           <ProfileProvider>
-            <CartProvider>
-              <OrderProvider>
-                <Header />
-                <main className="flex-1">{children}</main>
-                <Footer />
-              </OrderProvider>
-            </CartProvider>
+            <CatalogProvider>
+              <CartProvider>
+                <OrderProvider>
+                  <Header />
+                  <main className="flex-1">{children}</main>
+                  <Footer />
+                </OrderProvider>
+              </CartProvider>
+            </CatalogProvider>
           </ProfileProvider>
         </AuthProvider>
       </body>

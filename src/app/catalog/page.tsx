@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import ProductCard from "@/components/ProductCard";
-import { products } from "@/data/products";
+import { products as staticProducts } from "@/data/products";
 import { PRODUCT_CATEGORIES } from "@/types/product";
-import type { ProductCategory } from "@/types/product";
+import { IS_SUPABASE_CATALOG_ENABLED, useCatalog } from "@/context/CatalogContext";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -18,8 +18,14 @@ function categoryButtonClass(isActive: boolean) {
 }
 
 export default function CatalogPage() {
+  const catalog = useCatalog();
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<ProductCategory | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
+
+  const products = IS_SUPABASE_CATALOG_ENABLED ? catalog.products : staticProducts;
+  const categoryNames = IS_SUPABASE_CATALOG_ENABLED
+    ? catalog.categories.map((item) => item.name)
+    : [...PRODUCT_CATEGORIES];
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -33,7 +39,7 @@ export default function CatalogPage() {
 
       return matchesQuery && matchesCategory;
     });
-  }, [query, category]);
+  }, [products, query, category]);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -64,7 +70,7 @@ export default function CatalogPage() {
         >
           Все категории
         </button>
-        {PRODUCT_CATEGORIES.map((item) => (
+        {categoryNames.map((item) => (
           <button
             key={item}
             type="button"
@@ -76,20 +82,30 @@ export default function CatalogPage() {
         ))}
       </div>
 
-      <p className="mt-4 text-sm text-neutral-500">
-        Найдено товаров: {filteredProducts.length}
-      </p>
-
-      {filteredProducts.length > 0 ? (
-        <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredProducts.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
-      ) : (
-        <p className="mt-10 text-center text-neutral-500">
-          По вашему запросу ничего не найдено.
+      {IS_SUPABASE_CATALOG_ENABLED && catalog.loading ? (
+        <p className="mt-10 text-center text-neutral-500">Загрузка каталога...</p>
+      ) : IS_SUPABASE_CATALOG_ENABLED && catalog.error ? (
+        <p className="mt-10 text-center text-red-600">
+          Не удалось загрузить каталог: {catalog.error}
         </p>
+      ) : (
+        <>
+          <p className="mt-4 text-sm text-neutral-500">
+            Найдено товаров: {filteredProducts.length}
+          </p>
+
+          {filteredProducts.length > 0 ? (
+            <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredProducts.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          ) : (
+            <p className="mt-10 text-center text-neutral-500">
+              По вашему запросу ничего не найдено.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
