@@ -7,12 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PRODUCT_CATEGORIES } from "@/types/product";
 import type { Product as StaticProduct, ProductCategory } from "@/types/product";
 import type { CatalogEntry, Category } from "@/types/database";
-
-// Feature flag: while false, nothing in this context ever talks to
-// Supabase — the static catalog (src/data/products.ts) keeps driving
-// /catalog, /product/[id] and the cart, unchanged.
-export const IS_SUPABASE_CATALOG_ENABLED =
-  process.env.NEXT_PUBLIC_USE_SUPABASE_CATALOG === "true";
+import { useSupabaseCatalog } from "@/lib/featureFlags";
 
 interface CatalogContextValue {
   categories: Category[];
@@ -80,7 +75,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [loadedForUserId, setLoadedForUserId] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
-    if (!IS_SUPABASE_CATALOG_ENABLED || authLoading || loadedForUserId === currentUserId) {
+    if (!useSupabaseCatalog || authLoading || loadedForUserId === currentUserId) {
       return;
     }
 
@@ -112,7 +107,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   }, [authLoading, currentUserId, loadedForUserId]);
 
   const refreshCatalog = useCallback(async () => {
-    if (!IS_SUPABASE_CATALOG_ENABLED) {
+    if (!useSupabaseCatalog) {
       return;
     }
     try {
@@ -128,7 +123,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loading =
-    IS_SUPABASE_CATALOG_ENABLED && (authLoading || loadedForUserId !== currentUserId);
+    useSupabaseCatalog && (authLoading || loadedForUserId !== currentUserId);
 
   const value = useMemo<CatalogContextValue>(
     () => ({ categories, products, loading, error, refreshCatalog }),

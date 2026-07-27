@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import { products as staticProducts } from "@/data/products";
 import { PRODUCT_CATEGORIES } from "@/types/product";
-import { IS_SUPABASE_CATALOG_ENABLED, useCatalog } from "@/context/CatalogContext";
+import { useCatalog } from "@/context/CatalogContext";
+import { useSupabaseCatalog } from "@/lib/featureFlags";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -22,8 +23,8 @@ export default function CatalogPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
 
-  const products = IS_SUPABASE_CATALOG_ENABLED ? catalog.products : staticProducts;
-  const categoryNames = IS_SUPABASE_CATALOG_ENABLED
+  const products = useSupabaseCatalog ? catalog.products : staticProducts;
+  const categoryNames = useSupabaseCatalog
     ? catalog.categories.map((item) => item.name)
     : [...PRODUCT_CATEGORIES];
 
@@ -82,9 +83,9 @@ export default function CatalogPage() {
         ))}
       </div>
 
-      {IS_SUPABASE_CATALOG_ENABLED && catalog.loading ? (
+      {useSupabaseCatalog && catalog.loading ? (
         <p className="mt-10 text-center text-neutral-500">Загрузка каталога...</p>
-      ) : IS_SUPABASE_CATALOG_ENABLED && catalog.error ? (
+      ) : useSupabaseCatalog && catalog.error ? (
         <p className="mt-10 text-center text-red-600">
           Не удалось загрузить каталог: {catalog.error}
         </p>

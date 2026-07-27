@@ -2,8 +2,7 @@ import { notFound } from "next/navigation";
 import { products } from "@/data/products";
 import ProductDetail from "@/components/ProductDetail";
 import SupabaseProductPage from "@/components/SupabaseProductPage";
-
-const useSupabaseCatalog = process.env.NEXT_PUBLIC_USE_SUPABASE_CATALOG === "true";
+import { useSupabaseCatalog } from "@/lib/featureFlags";
 
 export function generateStaticParams() {
   if (useSupabaseCatalog) {
