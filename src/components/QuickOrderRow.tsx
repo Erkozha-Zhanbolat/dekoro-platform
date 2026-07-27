@@ -1,20 +1,44 @@
 import { formatPrice } from "@/lib/formatPrice";
 import { getAvailableStock } from "@/lib/inventory";
 import { ProductImagePlaceholder } from "@/components/ProductImagePlaceholder";
+import { QuantitySelector } from "@/components/QuantitySelector";
 import type { Product } from "@/types/product";
 
 // Shared grid template so the header row (rendered by the page) and every
 // QuickOrderRow line up on exactly the same columns:
-// Артикул | Товар | Категория | Ед. | Остаток | Цена.
+// Артикул | Товар | Категория | Ед. | Остаток | Цена | Количество.
 export const QUICK_ORDER_GRID_TEMPLATE =
-  "md:grid-cols-[120px_minmax(0,2fr)_150px_70px_110px_130px]";
+  "md:grid-cols-[100px_minmax(0,1.4fr)_130px_60px_90px_110px_190px]";
 
-// Read-only row for the Quick Order table: no quantity input, no add-to-cart
-// button, no favorites. Below md it collapses from a grid row into a
-// stacked, labeled mini-card so the table never forces horizontal scrolling.
-export function QuickOrderRow({ product }: { product: Product }) {
+export interface QuickOrderRowProps {
+  product: Product;
+  // Currently selected quantity for this row, already clamped to
+  // [0, maxQuantity] by the page.
+  value: number;
+  // Remaining capacity for this product: available stock minus whatever
+  // quantity of it is already sitting in the cart. Computed on the page
+  // (not here) since it depends on cart state.
+  maxQuantity: number;
+  quantityInCart: number;
+  onQuantityChange: (quantity: number) => void;
+}
+
+// Presentational row for the Quick Order table: quantity selection is fully
+// controlled by the page (value/maxQuantity/onQuantityChange props) — this
+// component does not read CartContext or own any state of its own. Below md
+// it collapses from a grid row into a stacked, labeled mini-card so the
+// table never forces horizontal scrolling.
+export function QuickOrderRow({
+  product,
+  value,
+  maxQuantity,
+  quantityInCart,
+  onQuantityChange,
+}: QuickOrderRowProps) {
   const availableStock = getAvailableStock(product);
   const isOutOfStock = availableStock <= 0;
+  const isSelectionDisabled = maxQuantity <= 0;
+  const isFullyInCart = !isOutOfStock && isSelectionDisabled;
 
   return (
     <div
@@ -62,6 +86,35 @@ export function QuickOrderRow({ product }: { product: Product }) {
           formatPrice(product.salePrice)
         )}
       </span>
+
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-neutral-400 md:hidden">Количество</span>
+        <QuantitySelector
+          value={value}
+          onChange={onQuantityChange}
+          min={0}
+          max={maxQuantity}
+          unit={product.unit}
+          disabled={isSelectionDisabled}
+          size="sm"
+        />
+        {isOutOfStock ? (
+          <span className="text-xs text-red-600">Нет в наличии</span>
+        ) : isFullyInCart ? (
+          <span className="text-xs text-amber-600">
+            Весь доступный остаток уже в корзине
+          </span>
+        ) : (
+          <span className="text-xs text-neutral-500">
+            Доступно для добавления: {maxQuantity} {product.unit}
+          </span>
+        )}
+        {quantityInCart > 0 && (
+          <span className="text-xs text-neutral-400">
+            Уже в корзине: {quantityInCart} {product.unit}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
