@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
+import type { SignUpMetadata } from "@/context/AuthContext";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -12,7 +13,10 @@ const focusRing =
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BIN_PATTERN = /^\d{12}$/;
 
+type CustomerType = "individual" | "company";
+
 interface FormState {
+  name: string;
   companyName: string;
   bin: string;
   contactPerson: string;
@@ -25,6 +29,7 @@ interface FormState {
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const initialFormState: FormState = {
+  name: "",
   companyName: "",
   bin: "",
   contactPerson: "",
@@ -34,20 +39,8 @@ const initialFormState: FormState = {
   confirmPassword: "",
 };
 
-function validate(form: FormState): FormErrors {
+function validate(form: FormState, customerType: CustomerType): FormErrors {
   const errors: FormErrors = {};
-
-  if (!form.companyName.trim()) {
-    errors.companyName = "Укажите наименование компании";
-  }
-
-  if (!BIN_PATTERN.test(form.bin.trim())) {
-    errors.bin = "БИН должен содержать ровно 12 цифр";
-  }
-
-  if (!form.contactPerson.trim()) {
-    errors.contactPerson = "Укажите контактное лицо";
-  }
 
   if (!form.phone.trim()) {
     errors.phone = "Укажите телефон";
@@ -65,12 +58,52 @@ function validate(form: FormState): FormErrors {
     errors.confirmPassword = "Пароли не совпадают";
   }
 
+  if (customerType === "individual") {
+    if (!form.name.trim()) {
+      errors.name = "Укажите имя";
+    }
+  } else {
+    if (!form.companyName.trim()) {
+      errors.companyName = "Укажите название компании / ИП";
+    }
+
+    if (!BIN_PATTERN.test(form.bin.trim())) {
+      errors.bin = "БИН / ИИН должен содержать ровно 12 цифр";
+    }
+
+    if (!form.contactPerson.trim()) {
+      errors.contactPerson = "Укажите контактное лицо";
+    }
+  }
+
   return errors;
+}
+
+function buildSignUpMetadata(
+  form: FormState,
+  customerType: CustomerType,
+): SignUpMetadata {
+  if (customerType === "individual") {
+    return {
+      customer_type: "individual",
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+    };
+  }
+
+  return {
+    customer_type: "company",
+    company_name: form.companyName.trim(),
+    bin: form.bin.trim(),
+    contact_person: form.contactPerson.trim(),
+    phone: form.phone.trim(),
+  };
 }
 
 export default function RegisterPage() {
   const router = useRouter();
   const { signUp } = useAuth();
+  const [customerType, setCustomerType] = useState<CustomerType>("company");
   const [form, setForm] = useState<FormState>(initialFormState);
   const [errors, setErrors] = useState<FormErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -81,11 +114,20 @@ export default function RegisterPage() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function selectCustomerType(nextType: CustomerType) {
+    if (nextType === customerType) {
+      return;
+    }
+    setCustomerType(nextType);
+    setErrors({});
+    setFormError(null);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
 
-    const validationErrors = validate(form);
+    const validationErrors = validate(form, customerType);
     setErrors(validationErrors);
 
     if (Object.keys(validationErrors).length > 0) {
@@ -97,12 +139,7 @@ export default function RegisterPage() {
     const { error, needsEmailConfirmation: requiresConfirmation } = await signUp(
       form.email.trim(),
       form.password,
-      {
-        company_name: form.companyName.trim(),
-        bin: form.bin.trim(),
-        contact_person: form.contactPerson.trim(),
-        phone: form.phone.trim(),
-      },
+      buildSignUpMetadata(form, customerType),
     );
 
     setIsSubmitting(false);
@@ -140,38 +177,68 @@ export default function RegisterPage() {
     );
   }
 
+  const isIndividual = customerType === "individual";
+
   return (
     <div className="mx-auto max-w-2xl px-6 py-16">
       <h1 className="text-3xl font-bold text-neutral-800">Регистрация</h1>
       <p className="mt-2 text-sm text-neutral-600">
-        Создайте аккаунт компании, чтобы оформлять заказы и отслеживать их
-        статус.
+        {isIndividual
+          ? "Создайте личный аккаунт, чтобы оформлять заказы и отслеживать их статус."
+          : "Создайте аккаунт компании или ИП, чтобы оформлять заказы и отслеживать их статус."}
       </p>
+
+      <div className="mt-6 flex flex-wrap gap-2" role="group" aria-label="Тип покупателя">
+        <TypeToggle
+          label="Физическое лицо"
+          active={isIndividual}
+          onClick={() => selectCustomerType("individual")}
+        />
+        <TypeToggle
+          label="Компания / ИП"
+          active={!isIndividual}
+          onClick={() => selectCustomerType("company")}
+        />
+      </div>
 
       <form onSubmit={handleSubmit} noValidate className="mt-8 flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <TextField
-            label="Компания"
-            value={form.companyName}
-            onChange={(value) => updateField("companyName", value)}
-            error={errors.companyName}
-            autoComplete="organization"
-          />
-          <TextField
-            label="БИН"
-            value={form.bin}
-            onChange={(value) => updateField("bin", value)}
-            error={errors.bin}
-            inputMode="numeric"
-            maxLength={12}
-          />
-          <TextField
-            label="Контактное лицо"
-            value={form.contactPerson}
-            onChange={(value) => updateField("contactPerson", value)}
-            error={errors.contactPerson}
-            autoComplete="name"
-          />
+          {isIndividual ? (
+            <TextField
+              label="Имя"
+              value={form.name}
+              onChange={(value) => updateField("name", value)}
+              error={errors.name}
+              autoComplete="name"
+              className="sm:col-span-2"
+            />
+          ) : (
+            <>
+              <TextField
+                label="Название компании / ИП"
+                value={form.companyName}
+                onChange={(value) => updateField("companyName", value)}
+                error={errors.companyName}
+                autoComplete="organization"
+              />
+              <TextField
+                label="БИН / ИИН"
+                value={form.bin}
+                onChange={(value) => updateField("bin", value)}
+                error={errors.bin}
+                inputMode="numeric"
+                maxLength={12}
+              />
+              <TextField
+                label="Контактное лицо"
+                value={form.contactPerson}
+                onChange={(value) => updateField("contactPerson", value)}
+                error={errors.contactPerson}
+                autoComplete="name"
+                className="sm:col-span-2"
+              />
+            </>
+          )}
           <TextField
             label="Телефон"
             value={form.phone}
@@ -189,7 +256,6 @@ export default function RegisterPage() {
             type="email"
             inputMode="email"
             autoComplete="email"
-            className="sm:col-span-2"
           />
           <TextField
             label="Пароль"
@@ -200,7 +266,7 @@ export default function RegisterPage() {
             autoComplete="new-password"
           />
           <TextField
-            label="Повтор пароля"
+            label="Подтверждение пароля"
             value={form.confirmPassword}
             onChange={(value) => updateField("confirmPassword", value)}
             error={errors.confirmPassword}
@@ -227,6 +293,31 @@ export default function RegisterPage() {
         </Link>
       </p>
     </div>
+  );
+}
+
+function TypeToggle({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${focusRing} ${
+        active
+          ? "border-[#0F766E] bg-[#0F766E] text-white"
+          : "border-neutral-200 text-neutral-600 hover:border-[#0F766E] hover:text-[#0F766E]"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

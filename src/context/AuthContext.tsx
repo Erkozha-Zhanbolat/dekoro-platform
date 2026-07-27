@@ -5,12 +5,21 @@ import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
 
-export interface SignUpMetadata {
+export type IndividualSignUpMetadata = {
+  customer_type: "individual";
+  name: string;
+  phone: string;
+};
+
+export type CompanySignUpMetadata = {
+  customer_type: "company";
   company_name: string;
   bin: string;
   contact_person: string;
   phone: string;
-}
+};
+
+export type SignUpMetadata = IndividualSignUpMetadata | CompanySignUpMetadata;
 
 interface AuthContextValue {
   user: User | null;
