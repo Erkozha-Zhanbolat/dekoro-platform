@@ -27,7 +27,10 @@ async function fetchProfileAndCompany(userId: string): Promise<ProfileAndCompany
 
   const profile = (profileData as Profile | null) ?? null;
 
-  if (!profile || !profile.company_id) {
+  // Individual accounts never have a linked company. Company accounts without
+  // company_id are treated as incomplete data (company stays null) and must
+  // not crash the profile page.
+  if (!profile || profile.customer_type !== "company" || !profile.company_id) {
     return { profile, company: null };
   }
 

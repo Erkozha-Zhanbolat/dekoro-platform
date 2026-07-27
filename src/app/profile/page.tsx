@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
-import { USER_ROLE_LABELS } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -33,8 +32,8 @@ export default function ProfilePage() {
       <div className="mx-auto max-w-6xl px-6 py-16">
         <h1 className="text-3xl font-bold text-neutral-800">Профиль</h1>
         <p className="mt-4 text-neutral-600">
-          Войдите в личный кабинет или зарегистрируйте компанию, чтобы
-          оформлять заказы и отслеживать их статус.
+          Войдите в личный кабинет или зарегистрируйтесь, чтобы оформлять
+          заказы и отслеживать их статус.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
@@ -73,18 +72,45 @@ export default function ProfilePage() {
     );
   }
 
+  const isIndividual = profile.customer_type === "individual";
+  const isCompanyWithoutData =
+    profile.customer_type === "company" && company === null;
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-16">
-      <h1 className="text-3xl font-bold text-neutral-800">Профиль</h1>
+      <h1 className="text-3xl font-bold text-neutral-800">
+        {isIndividual ? "Личный профиль" : "Профиль компании"}
+      </h1>
+
+      {isCompanyWithoutData && (
+        <p className="mt-4 max-w-xl rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Данные компании не найдены. Обратитесь в поддержку или заполните
+          реквизиты позже.
+        </p>
+      )}
 
       <div className="mt-6 max-w-xl rounded-md border border-neutral-200 p-6">
         <dl className="flex flex-col gap-4">
-          <ProfileField label="Компания" value={company?.name ?? "—"} />
-          <ProfileField label="БИН" value={company?.bin ?? "—"} />
-          <ProfileField label="Контактное лицо" value={profile.full_name} />
-          <ProfileField label="Телефон" value={profile.phone ?? "—"} />
-          <ProfileField label="Email" value={user.email ?? "—"} />
-          <ProfileField label="Роль" value={USER_ROLE_LABELS[profile.role]} />
+          {isIndividual ? (
+            <>
+              <ProfileField label="Имя" value={profile.full_name} />
+              <ProfileField label="Телефон" value={profile.phone ?? "—"} />
+              <ProfileField label="Email" value={user.email ?? "—"} />
+              <ProfileField label="Тип покупателя" value="Физическое лицо" />
+            </>
+          ) : (
+            <>
+              <ProfileField
+                label="Название компании / ИП"
+                value={company?.name ?? "—"}
+              />
+              <ProfileField label="БИН / ИИН" value={company?.bin ?? "—"} />
+              <ProfileField label="Контактное лицо" value={profile.full_name} />
+              <ProfileField label="Телефон" value={profile.phone ?? "—"} />
+              <ProfileField label="Email" value={user.email ?? "—"} />
+              <ProfileField label="Тип покупателя" value="Компания / ИП" />
+            </>
+          )}
         </dl>
       </div>
 
