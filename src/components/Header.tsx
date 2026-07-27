@@ -10,6 +10,7 @@ import { useSupabaseCatalog, useSupabaseFavorites } from "@/lib/featureFlags";
 
 const primaryLinks = [
   { href: "/catalog", label: "Каталог" },
+  { href: "/quick-order", label: "Быстрый заказ" },
   { href: "/promotions", label: "Акции" },
 ];
 
