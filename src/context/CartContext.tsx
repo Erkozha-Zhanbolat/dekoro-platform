@@ -9,12 +9,18 @@ export interface CartItem {
   quantity: number;
 }
 
+export interface CartBulkEntry {
+  product: Product;
+  quantity: number;
+}
+
 interface CartContextValue {
   items: CartItem[];
   totalQuantity: number;
   totalAmount: number;
   hasUnpricedItems: boolean;
   addToCart: (product: Product, quantity: number) => void;
+  addManyToCart: (entries: CartBulkEntry[]) => void;
   increaseQuantity: (productId: string) => void;
   decreaseQuantity: (productId: string) => void;
   setItemQuantity: (productId: string, quantity: number) => void;
@@ -41,6 +47,51 @@ export function CartProvider({ children }: { children: ReactNode }) {
         );
       }
       return [...current, { product, quantity }];
+    });
+  }, []);
+
+  // Merges a batch of entries into the cart with a single setItems() call,
+  // instead of calling addToCart() in a loop (which would issue one state
+  // update per entry). Entries for the same product (either duplicated in
+  // the input or already present in the cart) have their quantities summed;
+  // entries with quantity <= 0 are ignored, same as addToCart().
+  const addManyToCart = useCallback((entries: CartBulkEntry[]) => {
+    setItems((current) => {
+      const additionalQuantityByProductId = new Map<string, number>();
+      const productById = new Map<string, Product>();
+
+      for (const entry of entries) {
+        if (entry.quantity <= 0) {
+          continue;
+        }
+        additionalQuantityByProductId.set(
+          entry.product.id,
+          (additionalQuantityByProductId.get(entry.product.id) ?? 0) + entry.quantity,
+        );
+        productById.set(entry.product.id, entry.product);
+      }
+
+      if (additionalQuantityByProductId.size === 0) {
+        return current;
+      }
+
+      const next = current.map((item) => {
+        const additionalQuantity = additionalQuantityByProductId.get(item.product.id);
+        if (additionalQuantity === undefined) {
+          return item;
+        }
+        additionalQuantityByProductId.delete(item.product.id);
+        return { ...item, quantity: item.quantity + additionalQuantity };
+      });
+
+      for (const [productId, quantity] of additionalQuantityByProductId) {
+        const product = productById.get(productId);
+        if (product) {
+          next.push({ product, quantity });
+        }
+      }
+
+      return next;
     });
   }, []);
 
@@ -110,6 +161,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       totalAmount,
       hasUnpricedItems,
       addToCart,
+      addManyToCart,
       increaseQuantity,
       decreaseQuantity,
       setItemQuantity,
@@ -122,6 +174,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       totalAmount,
       hasUnpricedItems,
       addToCart,
+      addManyToCart,
       increaseQuantity,
       decreaseQuantity,
       setItemQuantity,
