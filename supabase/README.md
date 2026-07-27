@@ -29,20 +29,23 @@ migration is verified):**
 2. Run `supabase/migrations/002_catalog_inventory_pricing.sql`.
 3. Run `supabase/seed/001_catalog_demo.sql`.
 4. Run `supabase/migrations/003_favorites.sql`.
-5. Set in `.env.local`:
+5. Run `supabase/migrations/004_customer_types.sql` (requires step 1;
+   extends `profiles` with `customer_type` and updates the signup trigger
+   — see "Migration 004" below). Only needs 001, independent of 002–003.
+6. Set in `.env.local`:
    ```
    NEXT_PUBLIC_USE_SUPABASE_CATALOG=true
    NEXT_PUBLIC_USE_SUPABASE_FAVORITES=true
    ```
-6. Restart `npm run dev`.
-7. Register or sign in (favorites now require a signed-in user).
-8. Add a product to favorites (heart icon on a product card or product page).
-9. Check the `favorites` table in the Table Editor.
-10. Open `/favorites`.
-11. Remove a product from favorites and confirm it disappears immediately.
+7. Restart `npm run dev`.
+8. Register or sign in (favorites now require a signed-in user).
+9. Add a product to favorites (heart icon on a product card or product page).
+10. Check the `favorites` table in the Table Editor.
+11. Open `/favorites`.
+12. Remove a product from favorites and confirm it disappears immediately.
 
-Steps 1–3 alone (without step 4 or the flags) leave the app exactly as it
-was before this catalog work — `/catalog`, `/product/[id]` and `/cart`
+Steps 1–3 alone (without step 4, 5, or the flags) leave the app exactly as
+it was before this catalog work — `/catalog`, `/product/[id]` and `/cart`
 should look identical to the static catalog either way.
 
 Each SQL file starts with a small guard block that raises a clear error if

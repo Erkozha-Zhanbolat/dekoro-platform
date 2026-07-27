@@ -158,14 +158,14 @@ begin
 end;
 $$;
 
--- The trigger definition itself is unchanged (still points at
--- public.handle_new_user()), but it is dropped and recreated here to match
--- the idempotent style used across every migration in this project.
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row
-  execute function public.handle_new_user();
+-- No trigger changes needed: the existing on_auth_user_created trigger
+-- (created in 001_companies_and_profiles.sql) already points at
+-- public.handle_new_user() by name. CREATE OR REPLACE FUNCTION above keeps
+-- the same signature (returns trigger, no arguments), so the trigger picks
+-- up this new implementation automatically on its very next firing —
+-- dropping and recreating the trigger here would add no benefit and would
+-- only open a brief window where a concurrent signup could fire with no
+-- trigger at all.
 
 -- ============================================================
 -- 3. Row Level Security / grants / update_my_profile()
