@@ -18,12 +18,15 @@ export interface Company {
   updated_at: string;
 }
 
+export type CustomerType = "individual" | "company";
+
 export interface Profile {
   id: string;
   company_id: string | null;
   full_name: string;
   phone: string | null;
   role: UserRole;
+  customer_type: CustomerType;
   is_active: boolean;
   created_at: string;
   updated_at: string;

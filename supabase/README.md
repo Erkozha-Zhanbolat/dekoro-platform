@@ -119,6 +119,61 @@ row yet — no existing user or profile is ever altered or deleted).
 
 ---
 
+## Migration 004: individual and company customer types
+
+Not required for the app to keep working as-is — this migration only
+prepares the database for supporting individual (physical person) customers
+in addition to the existing company/IP registration flow. **It is not
+applied automatically; run it by hand in the SQL Editor when you're ready.**
+The registration page, `AuthContext`, and `ProfileContext` are not changed
+by this step and keep working exactly as before against the updated schema.
+
+### What it does
+
+- Adds `public.profiles.customer_type` (`text`, `not null`, `check
+  (customer_type in ('individual', 'company'))`).
+- Backfills existing rows before enforcing `not null`: `company_id is not
+  null` → `'company'`, otherwise → `'individual'`.
+- Updates `public.handle_new_user()` (the trigger on `auth.users`) to
+  support two signup shapes:
+  - **Individual**: `raw_user_meta_data` has `customer_type = 'individual'`,
+    `name`, `phone` → no `companies` row is created, `profiles.company_id`
+    is `null`, `full_name` comes from `name`.
+  - **Company/IP**: `raw_user_meta_data` has `customer_type = 'company'`,
+    `company_name`, `bin`, `contact_person`, `phone` → same company
+    lookup/creation logic as before, `full_name` comes from
+    `contact_person`.
+  - **Backward compatibility**: if `customer_type` is missing (the current
+    registration form never sends it), the function falls back to the old
+    rule — `company_name` and `bin` both present means "company" — so
+    existing signups keep working unchanged after this migration.
+- Does not change `update_my_profile()`: it only ever touches `full_name`
+  and `phone`, and `customer_type` is fixed at signup time, so there was no
+  reason to add it there.
+- No RLS policy changes: `profiles_select_own` already covers the new
+  column (it selects the whole row), and no new INSERT/UPDATE/DELETE policy
+  is introduced — profile rows are still only ever written through
+  `handle_new_user()` and `update_my_profile()`.
+
+### Verifying the result
+
+```sql
+select column_name, is_nullable, data_type
+from information_schema.columns
+where table_schema = 'public' and table_name = 'profiles' and column_name = 'customer_type';
+
+select conname from pg_constraint
+where conrelid = 'public.profiles'::regclass and conname = 'profiles_customer_type_check';
+
+select customer_type, company_id is not null as has_company, count(*)
+from public.profiles
+group by 1, 2;
+-- every existing row should now have a non-null customer_type consistent
+-- with whether it has a company_id
+```
+
+---
+
 ## Migration 002: catalog, warehouses, inventory & pricing
 
 ### What it creates
