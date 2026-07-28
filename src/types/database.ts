@@ -203,6 +203,12 @@ export type CreateOrderItemInput = {
   quantity: number;
 };
 
+/** Full argument shape for public.create_order(p_items jsonb, p_comment text). */
+export type CreateOrderInput = {
+  items: CreateOrderItemInput[];
+  comment?: string | null;
+};
+
 /** Row returned by public.create_order(...). */
 export type CreateOrderResult = {
   id: string;

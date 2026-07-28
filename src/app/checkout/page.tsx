@@ -6,10 +6,11 @@ import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
-import { useOrders } from "@/context/OrderContext";
 import { FULFILLMENT_LABELS } from "@/context/OrderContext";
 import type { FulfillmentType } from "@/context/OrderContext";
 import { OrderSummaryPanel } from "@/components/OrderSummaryPanel";
+import { createOrder } from "@/lib/orders";
+import type { CreateOrderItemInput } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -85,9 +86,10 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { items, totalAmount, hasUnpricedItems, clearCart } = useCart();
-  const { createOrder } = useOrders();
   const [form, setForm] = useState<FormState>(initialFormState);
   const [errors, setErrors] = useState<FormErrors>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) {
@@ -103,8 +105,12 @@ export default function CheckoutPage() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (submitting) {
+      return;
+    }
 
     const validationErrors = validate(form);
     setErrors(validationErrors);
@@ -114,23 +120,36 @@ export default function CheckoutPage() {
     }
 
     const fulfillmentType = form.fulfillmentType as FulfillmentType;
+    const orderItems: CreateOrderItemInput[] = items.map((item) => ({
+      product_id: item.product.id,
+      quantity: item.quantity,
+    }));
 
-    const order = createOrder({
-      companyName: form.companyName.trim(),
-      bin: form.bin.trim(),
-      contactPerson: form.contactPerson.trim(),
-      phone: form.phone.trim(),
-      email: form.email.trim(),
-      fulfillmentType,
-      pickupComment: form.pickupComment.trim(),
-      comment: form.comment.trim(),
-      items,
-      knownTotal: totalAmount,
-      hasUnpricedItems,
-    });
+    setSubmitError(null);
+    setSubmitting(true);
 
-    clearCart();
-    router.push(`/order-success?orderId=${order.id}`);
+    try {
+      const result = await createOrder({
+        items: orderItems,
+        comment: form.comment.trim() || null,
+      });
+
+      clearCart();
+
+      const successParams = new URLSearchParams({
+        orderNumber: result.order_number,
+      });
+      successParams.set("fulfillment", fulfillmentType);
+
+      router.push(`/order-success?${successParams.toString()}`);
+    } catch (caughtError) {
+      setSubmitError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Не удалось оформить заказ",
+      );
+      setSubmitting(false);
+    }
   }
 
   if (authLoading || !user) {
@@ -307,12 +326,21 @@ export default function CheckoutPage() {
             </div>
           </section>
 
-          <button
-            type="submit"
-            className={`self-start rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] ${focusRing}`}
-          >
-            Подтвердить заказ
-          </button>
+          <div className="flex flex-col items-start gap-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              aria-busy={submitting}
+              className={`self-start rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
+            >
+              {submitting ? "Оформляем заказ..." : "Подтвердить заказ"}
+            </button>
+            {submitError && (
+              <p className="text-sm text-red-600" role="alert">
+                {submitError}
+              </p>
+            )}
+          </div>
         </form>
 
         <OrderSummaryPanel

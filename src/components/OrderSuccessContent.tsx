@@ -2,18 +2,25 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FULFILLMENT_LABELS, useOrders } from "@/context/OrderContext";
+import { FULFILLMENT_LABELS } from "@/context/OrderContext";
+import type { FulfillmentType } from "@/context/OrderContext";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
+function isFulfillmentType(value: string | null): value is FulfillmentType {
+  return value === "pickup" || value === "customer_transport";
+}
+
 export default function OrderSuccessContent() {
   const searchParams = useSearchParams();
-  const orderId = searchParams.get("orderId");
-  const { getOrderById } = useOrders();
-  const order = orderId ? getOrderById(orderId) : undefined;
+  const orderNumber = searchParams.get("orderNumber");
+  const fulfillmentParam = searchParams.get("fulfillment");
+  const fulfillmentType = isFulfillmentType(fulfillmentParam)
+    ? fulfillmentParam
+    : null;
 
-  if (!order) {
+  if (!orderNumber) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16 text-center">
         <h1 className="text-3xl font-bold text-neutral-800">
@@ -38,14 +45,16 @@ export default function OrderSuccessContent() {
         Заказ отправлен на проверку
       </h1>
       <p className="mt-4 text-lg font-semibold text-[#0F766E]">
-        {order.orderNumber}
+        {orderNumber}
       </p>
-      <p className="mt-2 text-sm text-neutral-500">
-        Способ получения:{" "}
-        <span className="font-medium text-neutral-700">
-          {FULFILLMENT_LABELS[order.fulfillmentType]}
-        </span>
-      </p>
+      {fulfillmentType && (
+        <p className="mt-2 text-sm text-neutral-500">
+          Способ получения:{" "}
+          <span className="font-medium text-neutral-700">
+            {FULFILLMENT_LABELS[fulfillmentType]}
+          </span>
+        </p>
+      )}
       <p className="mt-4 text-neutral-600">
         Менеджер DEKORO проверит наличие и цены, после чего сформирует счёт
         на оплату. Сборка заказа начнётся только после подтверждения 100%
