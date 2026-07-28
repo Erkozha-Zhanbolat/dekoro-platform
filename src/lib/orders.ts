@@ -54,6 +54,43 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   return result;
 }
 
+/** Row shape returned by public.cancel_order(uuid). */
+export type CancelOrderResult = {
+  id: string;
+  order_number: string;
+  status: OrderStatus;
+  updated_at: string;
+};
+
+/**
+ * Cancels an order via public.cancel_order() — the only server-side entry
+ * point for cancellation (supabase/migrations/009_cancel_order_release_reservation.sql).
+ *
+ * Only the order's own owner may call this, and only while status = 'new';
+ * the RPC itself enforces both and releases the order's inventory
+ * reservation atomically with the status change. No SQL/business logic is
+ * duplicated here — this is a thin RPC wrapper, same shape as createOrder().
+ *
+ * No UI — data access only.
+ */
+export async function cancelOrder(orderId: string): Promise<CancelOrderResult> {
+  const { data, error } = await supabase.rpc("cancel_order", {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось отменить заказ");
+  }
+
+  const [result] = (data as CancelOrderResult[] | null) ?? [];
+
+  if (!result) {
+    throw new Error("Не удалось отменить заказ");
+  }
+
+  return result;
+}
+
 /** Row shape returned by the listOrders() select (own orders, RLS-scoped). */
 type OrderListRow = {
   id: string;

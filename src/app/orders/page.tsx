@@ -110,9 +110,10 @@ export default function OrdersPage() {
       ) : (
         <div className="mt-6 flex flex-col gap-4">
           {orders.map((order) => (
-            <div
+            <Link
               key={order.id}
-              className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 sm:flex-row sm:items-center sm:justify-between"
+              href={`/orders/${order.id}`}
+              className={`flex cursor-pointer flex-col gap-3 rounded-lg border border-neutral-200 p-4 transition-colors hover:border-[#0F766E] hover:bg-neutral-50 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between ${focusRing}`}
             >
               <div>
                 <p className="text-sm font-semibold text-neutral-800">
@@ -140,7 +141,7 @@ export default function OrdersPage() {
                   {ORDER_STATUS_LABELS[order.status]}
                 </span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

@@ -221,11 +221,11 @@ begin
       raise exception 'Не удалось снять резерв товара %', v_reservation.product_id;
     end if;
 
-    update public.inventory_reservations
+    update public.inventory_reservations as r
     set status = 'released',
         released_at = now()
-    where id = v_reservation.id
-      and status = 'active';
+    where r.id = v_reservation.id
+      and r.status = 'active';
 
     get diagnostics v_affected_rows = row_count;
 

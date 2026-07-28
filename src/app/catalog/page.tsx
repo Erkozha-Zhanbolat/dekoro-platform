@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import { useCatalog } from "@/context/CatalogContext";
 
@@ -17,8 +17,21 @@ function categoryButtonClass(isActive: boolean) {
 
 export default function CatalogPage() {
   const catalog = useCatalog();
+  const { refreshCatalog } = catalog;
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
+
+  // CatalogProvider (root layout) loads the catalog once per signed-in
+  // identity and never refetches on its own — stock/availability otherwise
+  // stays stuck at whatever it was on first load for the whole session
+  // (e.g. still showing pre-order quantity after create_order()/cancel_order()
+  // changed reserved_quantity server-side). Re-running getCatalog() every
+  // time this page mounts (including client-side navigation back to
+  // /catalog) keeps available_stock current without a full page reload.
+  useEffect(() => {
+    void refreshCatalog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();

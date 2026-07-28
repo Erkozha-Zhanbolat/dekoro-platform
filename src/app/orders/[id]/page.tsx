@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { DELIVERY_TYPE_LABELS, getOrder } from "@/lib/orders";
+import { useCatalog } from "@/context/CatalogContext";
+import { DELIVERY_TYPE_LABELS, cancelOrder, getOrder } from "@/lib/orders";
 import type { OrderDetail } from "@/lib/orders";
 import { formatPrice } from "@/lib/formatPrice";
 import { ORDER_STATUS_LABELS } from "@/types/database";
@@ -26,12 +27,15 @@ export default function OrderDetailPage() {
   const orderId = params.id;
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const { refreshCatalog } = useCatalog();
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   // undefined = not loaded yet for this key ("<userId>:<orderId>").
   const [loadedKey, setLoadedKey] = useState<string | undefined>(undefined);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const currentKey = user ? `${user.id}:${orderId}` : undefined;
 
@@ -79,6 +83,45 @@ export default function OrderDetailPage() {
   }, [authLoading, user, orderId, currentKey, loadedKey]);
 
   const loading = !authLoading && !!user && loadedKey !== currentKey;
+
+  // Only 'new' orders can be cancelled — cancel_order() (009) itself
+  // re-checks this server-side (and ownership), this is just what shows the
+  // button at all.
+  async function handleCancelOrder() {
+    if (!order || order.status !== "new" || cancelling) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Отменить заказ ${order.order_number}? Зарезервированный товар будет освобождён.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setCancelling(true);
+    setCancelError(null);
+
+    try {
+      await cancelOrder(order.id);
+      // Re-fetch the full order instead of patching status locally, so the
+      // displayed data always matches exactly what cancel_order() committed.
+      const refreshed = await getOrder(orderId);
+      setOrder(refreshed);
+      setNotFound(refreshed === null);
+      // Cancelling releases the order's inventory reservation server-side;
+      // refresh the catalog so available stock reflects that immediately.
+      void refreshCatalog();
+    } catch (error) {
+      // Leave `order` (and its status) untouched on failure — only surface
+      // the error, never guess at the new state ourselves.
+      setCancelError(
+        error instanceof Error ? error.message : "Не удалось отменить заказ",
+      );
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   if (authLoading || !user || loading) {
     return (
@@ -138,6 +181,24 @@ export default function OrderDetailPage() {
       <p className="mt-1 text-sm text-neutral-500">
         от {new Date(order.created_at).toLocaleString("ru-RU")}
       </p>
+
+      {order.status === "new" && (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={handleCancelOrder}
+            disabled={cancelling}
+            className={`rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:border-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 disabled:hover:bg-transparent ${focusRing}`}
+          >
+            {cancelling ? "Отмена..." : "Отменить заказ"}
+          </button>
+          {cancelError && (
+            <p className="mt-2 text-sm text-red-600" role="alert">
+              {cancelError}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="mt-8 flex flex-col gap-8">
         <section>
