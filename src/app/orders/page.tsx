@@ -4,20 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { listOrders } from "@/lib/orders";
+import { DELIVERY_TYPE_LABELS, listOrders } from "@/lib/orders";
 import type { OrderListItem } from "@/lib/orders";
 import { formatPrice } from "@/lib/formatPrice";
 import { ORDER_STATUS_LABELS } from "@/types/database";
-import type { DeliveryType } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
-
-const DELIVERY_TYPE_LABELS: Record<DeliveryType, string> = {
-  pickup: "Самовывоз со склада DEKORO",
-  customer_transport: "Забор транспортом клиента",
-  delivery: "Доставка",
-};
 
 export default function OrdersPage() {
   const router = useRouter();

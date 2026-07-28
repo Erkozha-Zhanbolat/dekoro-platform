@@ -6,6 +6,13 @@ import type {
   OrderStatus,
 } from "@/types/database";
 
+/** Human-readable label for orders.delivery_type, shared by the list and detail pages. */
+export const DELIVERY_TYPE_LABELS: Record<DeliveryType, string> = {
+  pickup: "Самовывоз со склада DEKORO",
+  customer_transport: "Забор транспортом клиента",
+  delivery: "Доставка",
+};
+
 /** Trims a value and turns an empty/whitespace-only string into null. */
 function trimToNull(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -110,4 +117,96 @@ export async function listOrders(): Promise<OrderListItem[]> {
       totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
     };
   });
+}
+
+/** A single line item as shown on the order detail page. */
+export type OrderDetailItem = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+};
+
+/** Full detail for a single order, as shown on /orders/[id]. */
+export type OrderDetail = {
+  id: string;
+  order_number: string;
+  created_at: string;
+  status: OrderStatus;
+  subtotal: number;
+  discount: number;
+  total: number;
+  comment: string | null;
+  contact_name: string;
+  contact_phone: string;
+  contact_email: string | null;
+  delivery_type: DeliveryType;
+  delivery_address: string | null;
+  delivery_comment: string | null;
+  items: OrderDetailItem[];
+};
+
+/** Row shape returned by the getOrder() select (own order, RLS-scoped). */
+type OrderDetailRow = Omit<OrderDetail, "items"> & {
+  order_items: OrderDetailItem[] | null;
+};
+
+/**
+ * Loads a single order (with its line items) owned by the current
+ * authenticated user, or null if it does not exist / does not belong to
+ * them (RLS hides other users' orders the same way as a missing row).
+ *
+ * Relies entirely on existing RLS (orders_select_own / order_items_select_own
+ * from supabase/migrations/005_orders.sql) rather than a new RPC.
+ *
+ * No UI — data access only.
+ */
+export async function getOrder(id: string): Promise<OrderDetail | null> {
+  const { data, error } = await supabase
+    .from("orders")
+    .select(
+      "id, order_number, created_at, status, subtotal, discount, total, comment, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, order_items(id, product_id, product_name, quantity, unit_price, total:line_total)",
+    )
+    .eq("id", id)
+    .single();
+
+  if (error) {
+    // PGRST116: .single() found no row (deleted / other user's order, hidden
+    // by RLS). 22P02: id is not a valid uuid at all. Both mean "not found"
+    // from this user's point of view, not a hard error.
+    if (error.code === "PGRST116" || error.code === "22P02") {
+      return null;
+    }
+    throw new Error(error.message || "Не удалось загрузить заказ");
+  }
+
+  const row = data as OrderDetailRow;
+  const items = row.order_items ?? [];
+
+  return {
+    id: row.id,
+    order_number: row.order_number,
+    created_at: row.created_at,
+    status: row.status,
+    subtotal: Number(row.subtotal),
+    discount: Number(row.discount),
+    total: Number(row.total),
+    comment: row.comment,
+    contact_name: row.contact_name,
+    contact_phone: row.contact_phone,
+    contact_email: row.contact_email,
+    delivery_type: row.delivery_type,
+    delivery_address: row.delivery_address,
+    delivery_comment: row.delivery_comment,
+    items: items.map((item) => ({
+      id: item.id,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: item.quantity,
+      unit_price: Number(item.unit_price),
+      total: Number(item.total),
+    })),
+  };
 }
