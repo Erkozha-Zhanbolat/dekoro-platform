@@ -7,7 +7,6 @@ import { ProfileProvider } from "@/context/ProfileContext";
 import { CatalogProvider } from "@/context/CatalogContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
 import { CartProvider } from "@/context/CartContext";
-import { OrderProvider } from "@/context/OrderContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -42,11 +41,9 @@ export default function RootLayout({
             <CatalogProvider>
               <FavoritesProvider>
                 <CartProvider>
-                  <OrderProvider>
-                    <Header />
-                    <main className="flex-1">{children}</main>
-                    <Footer />
-                  </OrderProvider>
+                  <Header />
+                  <main className="flex-1">{children}</main>
+                  <Footer />
                 </CartProvider>
               </FavoritesProvider>
             </CatalogProvider>

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FULFILLMENT_LABELS } from "@/context/OrderContext";
-import type { FulfillmentType } from "@/context/OrderContext";
+import { FULFILLMENT_LABELS } from "@/lib/fulfillment";
+import type { FulfillmentType } from "@/lib/fulfillment";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
