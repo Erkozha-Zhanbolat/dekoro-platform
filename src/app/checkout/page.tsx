@@ -4,23 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import type { User } from "@supabase/supabase-js";
 import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { useCart } from "@/context/CartContext";
+import type { CartItem } from "@/context/CartContext";
 import { FULFILLMENT_LABELS } from "@/context/OrderContext";
 import type { FulfillmentType } from "@/context/OrderContext";
 import { OrderSummaryPanel } from "@/components/OrderSummaryPanel";
 import { createOrder } from "@/lib/orders";
-import type { CreateOrderItemInput } from "@/types/database";
+import type { Company, CreateOrderItemInput, Profile } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const BIN_PATTERN = /^\d{12}$/;
 
 interface FormState {
-  companyName: string;
-  bin: string;
   contactPerson: string;
   phone: string;
   email: string;
@@ -30,38 +30,11 @@ interface FormState {
 }
 
 type FormErrors = Partial<
-  Record<
-    | "companyName"
-    | "bin"
-    | "contactPerson"
-    | "phone"
-    | "email"
-    | "fulfillmentType",
-    string
-  >
+  Record<"contactPerson" | "phone" | "email" | "fulfillmentType", string>
 >;
-
-const initialFormState: FormState = {
-  companyName: "",
-  bin: "",
-  contactPerson: "",
-  phone: "",
-  email: "",
-  fulfillmentType: null,
-  pickupComment: "",
-  comment: "",
-};
 
 function validate(form: FormState): FormErrors {
   const errors: FormErrors = {};
-
-  if (!form.companyName.trim()) {
-    errors.companyName = "Укажите наименование компании";
-  }
-
-  if (!BIN_PATTERN.test(form.bin.trim())) {
-    errors.bin = "БИН должен содержать ровно 12 цифр";
-  }
 
   if (!form.contactPerson.trim()) {
     errors.contactPerson = "Укажите контактное лицо";
@@ -85,11 +58,8 @@ function validate(form: FormState): FormErrors {
 export default function CheckoutPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const { profile, company, profileLoading } = useProfile();
   const { items, totalAmount, hasUnpricedItems, clearCart } = useCart();
-  const [form, setForm] = useState<FormState>(initialFormState);
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) {
@@ -100,6 +70,126 @@ export default function CheckoutPage() {
       router.replace(`/login?next=${encodeURIComponent("/checkout")}`);
     }
   }, [authLoading, user, router]);
+
+  if (authLoading || !user || profileLoading) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <h1 className="text-3xl font-bold text-neutral-800">
+          Оформление заказа
+        </h1>
+        <p className="mt-4 text-neutral-600">Загрузка...</p>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <h1 className="text-3xl font-bold text-neutral-800">
+          Оформление заказа
+        </h1>
+        <p className="mt-4 text-neutral-600">
+          Не удалось загрузить профиль пользователя. Обновите страницу или
+          обратитесь к менеджеру, чтобы оформить заказ.
+        </p>
+        <Link
+          href="/profile"
+          className={`mt-6 inline-block rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] ${focusRing}`}
+        >
+          Перейти в профиль
+        </Link>
+      </div>
+    );
+  }
+
+  const isIndividual = profile.customer_type === "individual";
+
+  if (!isIndividual && !company) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <h1 className="text-3xl font-bold text-neutral-800">
+          Оформление заказа
+        </h1>
+        <p className="mt-4 text-neutral-600">
+          Ваш аккаунт компании/ИП не привязан к данным компании. Обратитесь к
+          менеджеру, чтобы оформить заказ.
+        </p>
+        <Link
+          href="/profile"
+          className={`mt-6 inline-block rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] ${focusRing}`}
+        >
+          Перейти в профиль
+        </Link>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <h1 className="text-3xl font-bold text-neutral-800">
+          Оформление заказа
+        </h1>
+        <p className="mt-4 text-neutral-600">
+          Ваша корзина пуста — добавьте товары, чтобы оформить заказ.
+        </p>
+        <Link
+          href="/catalog"
+          className={`mt-6 inline-block rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] ${focusRing}`}
+        >
+          Перейти в каталог
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <CheckoutForm
+      user={user}
+      profile={profile}
+      company={company}
+      items={items}
+      totalAmount={totalAmount}
+      hasUnpricedItems={hasUnpricedItems}
+      clearCart={clearCart}
+    />
+  );
+}
+
+function CheckoutForm({
+  user,
+  profile,
+  company,
+  items,
+  totalAmount,
+  hasUnpricedItems,
+  clearCart,
+}: {
+  user: User;
+  profile: Profile;
+  company: Company | null;
+  items: CartItem[];
+  totalAmount: number;
+  hasUnpricedItems: boolean;
+  clearCart: () => void;
+}) {
+  const router = useRouter();
+  const isIndividual = profile.customer_type === "individual";
+
+  // Seeded once from already-loaded profile/company data (CheckoutPage only
+  // mounts this component after profileLoading settles), so the form never
+  // flashes empty/wrong values before prefilling.
+  const [form, setForm] = useState<FormState>(() => ({
+    contactPerson: profile.full_name,
+    phone: profile.phone ?? "",
+    email: user.email ?? "",
+    fulfillmentType: null,
+    pickupComment: "",
+    comment: "",
+  }));
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -152,36 +242,6 @@ export default function CheckoutPage() {
     }
   }
 
-  if (authLoading || !user) {
-    return (
-      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-        <h1 className="text-3xl font-bold text-neutral-800">
-          Оформление заказа
-        </h1>
-        <p className="mt-4 text-neutral-600">Загрузка...</p>
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-        <h1 className="text-3xl font-bold text-neutral-800">
-          Оформление заказа
-        </h1>
-        <p className="mt-4 text-neutral-600">
-          Ваша корзина пуста — добавьте товары, чтобы оформить заказ.
-        </p>
-        <Link
-          href="/catalog"
-          className={`mt-6 inline-block rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] ${focusRing}`}
-        >
-          Перейти в каталог
-        </Link>
-      </div>
-    );
-  }
-
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
       <h1 className="text-3xl font-bold text-neutral-800">
@@ -192,23 +252,25 @@ export default function CheckoutPage() {
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-8">
           <section>
             <h2 className="text-lg font-semibold text-neutral-800">
-              Данные компании
+              {isIndividual ? "Контактные данные" : "Данные компании"}
             </h2>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TextField
-                label="Наименование компании"
-                value={form.companyName}
-                onChange={(value) => updateField("companyName", value)}
-                error={errors.companyName}
-              />
-              <TextField
-                label="БИН"
-                value={form.bin}
-                onChange={(value) => updateField("bin", value)}
-                error={errors.bin}
-                inputMode="numeric"
-                maxLength={12}
-              />
+              {!isIndividual && (
+                <>
+                  <TextField
+                    label="Наименование компании"
+                    value={company?.name ?? ""}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                  <TextField
+                    label="БИН"
+                    value={company?.bin ?? ""}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                </>
+              )}
               <TextField
                 label="Контактное лицо"
                 value={form.contactPerson}
@@ -233,6 +295,16 @@ export default function CheckoutPage() {
                 className="sm:col-span-2"
               />
             </div>
+            {!isIndividual && (
+              <p className="mt-2 text-xs text-neutral-400">
+                Наименование компании и БИН загружены из вашего профиля и
+                недоступны для редактирования здесь.
+              </p>
+            )}
+            <p className="mt-1 text-xs text-neutral-400">
+              Контактное лицо, телефон и email используются только для этого
+              заказа и не изменяют данные вашего профиля.
+            </p>
           </section>
 
           <section>
@@ -367,6 +439,7 @@ function TextField({
   inputMode,
   maxLength,
   className,
+  readOnly = false,
 }: {
   label: string;
   value: string;
@@ -376,6 +449,7 @@ function TextField({
   inputMode?: "text" | "numeric" | "tel" | "email";
   maxLength?: number;
   className?: string;
+  readOnly?: boolean;
 }) {
   return (
     <div className={className}>
@@ -388,10 +462,17 @@ function TextField({
         onChange={(event) => onChange(event.target.value)}
         inputMode={inputMode}
         maxLength={maxLength}
-        className={`mt-1 w-full rounded-md border px-3 py-2 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 ${
+        readOnly={readOnly}
+        className={`mt-1 w-full rounded-md border px-3 py-2 text-sm outline-none transition-colors placeholder:text-neutral-400 ${
+          readOnly
+            ? "cursor-default border-neutral-200 bg-neutral-50 text-neutral-500"
+            : "text-neutral-800"
+        } ${
           error
             ? "border-red-300 focus:border-red-400 focus:ring-1 focus:ring-red-400"
-            : "border-neutral-200 focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E]"
+            : readOnly
+              ? ""
+              : "border-neutral-200 focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E]"
         } ${focusRing}`}
       />
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
