@@ -203,10 +203,25 @@ export type CreateOrderItemInput = {
   quantity: number;
 };
 
-/** Full argument shape for public.create_order(p_items jsonb, p_comment text). */
+/**
+ * public.orders.delivery_type / create_order()'s p_delivery_type
+ * (supabase/migrations/007_checkout_order_details.sql). "delivery" is
+ * accepted by the schema/RPC for a future courier-delivery flow but is not
+ * yet reachable from the checkout UI, which only offers "pickup" and
+ * "customer_transport".
+ */
+export type DeliveryType = "pickup" | "customer_transport" | "delivery";
+
+/** Full argument shape for public.create_order() (see 007 migration). */
 export type CreateOrderInput = {
   items: CreateOrderItemInput[];
+  deliveryType: DeliveryType;
+  contactName: string;
+  contactPhone: string;
   comment?: string | null;
+  contactEmail?: string | null;
+  deliveryAddress?: string | null;
+  deliveryComment?: string | null;
 };
 
 /** Row returned by public.create_order(...). */

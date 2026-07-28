@@ -221,7 +221,13 @@ function CheckoutForm({
     try {
       const result = await createOrder({
         items: orderItems,
-        comment: form.comment.trim() || null,
+        deliveryType: fulfillmentType,
+        contactName: form.contactPerson,
+        contactPhone: form.phone,
+        contactEmail: form.email,
+        deliveryAddress: null,
+        deliveryComment: form.pickupComment,
+        comment: form.comment,
       });
 
       clearCart();
