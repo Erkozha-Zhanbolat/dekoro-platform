@@ -158,6 +158,13 @@ export interface Order {
   discount: number;
   total: number;
   comment: string | null;
+  // Added by supabase/migrations/007_checkout_order_details.sql.
+  delivery_type: DeliveryType;
+  contact_name: string;
+  contact_phone: string;
+  contact_email: string | null;
+  delivery_address: string | null;
+  delivery_comment: string | null;
   created_at: string;
   updated_at: string;
 }
