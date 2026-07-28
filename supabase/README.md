@@ -238,12 +238,15 @@ only server-side entry point for creating customer orders.
   - sets `company_id` from the profile (`null` for individual, required
     company row for company);
   - accepts only `{ product_id, quantity }` lines — no money fields;
+  - aggregates duplicate `product_id` values (sums quantities);
   - resolves unit price via `get_product_price()`;
-  - requires `products.status = 'active'`, a non-null price, and enough
-    available stock (no reservation yet);
+  - requires `products.status = 'active'` and a non-null price;
+  - does **not** check or reserve inventory (V1 orders stay `new` for
+    manager confirmation);
   - computes `line_total` / `subtotal` / `total` in SQL (`discount = 0`);
   - inserts `orders` + `order_items` atomically;
   - returns `(id, order_number, total, created_at)`.
+  - comment max length 2000; empty string → null.
 
 ### Verifying the result
 
