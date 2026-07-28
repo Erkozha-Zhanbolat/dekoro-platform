@@ -32,20 +32,23 @@ migration is verified):**
 5. Run `supabase/migrations/004_customer_types.sql` (requires step 1;
    extends `profiles` with `customer_type` and updates the signup trigger
    — see "Migration 004" below). Only needs 001, independent of 002–003.
-6. Set in `.env.local`:
+6. Run `supabase/migrations/005_orders.sql` (requires steps 1, 2 and 5;
+   creates `orders` / `order_items` with RLS — see "Migration 005" below).
+   Does not change the checkout UI; apply by hand when ready.
+7. Set in `.env.local`:
    ```
    NEXT_PUBLIC_USE_SUPABASE_CATALOG=true
    NEXT_PUBLIC_USE_SUPABASE_FAVORITES=true
    ```
-7. Restart `npm run dev`.
-8. Register or sign in (favorites now require a signed-in user).
-9. Add a product to favorites (heart icon on a product card or product page).
-10. Check the `favorites` table in the Table Editor.
-11. Open `/favorites`.
-12. Remove a product from favorites and confirm it disappears immediately.
+8. Restart `npm run dev`.
+9. Register or sign in (favorites now require a signed-in user).
+10. Add a product to favorites (heart icon on a product card or product page).
+11. Check the `favorites` table in the Table Editor.
+12. Open `/favorites`.
+13. Remove a product from favorites and confirm it disappears immediately.
 
-Steps 1–3 alone (without step 4, 5, or the flags) leave the app exactly as
-it was before this catalog work — `/catalog`, `/product/[id]` and `/cart`
+Steps 1–3 alone (without step 4, 5, 6, or the flags) leave the app exactly
+as it was before this catalog work — `/catalog`, `/product/[id]` and `/cart`
 should look identical to the static catalog either way.
 
 Each SQL file starts with a small guard block that raises a clear error if
@@ -173,6 +176,46 @@ from public.profiles
 group by 1, 2;
 -- every existing row should now have a non-null customer_type consistent
 -- with whether it has a company_id
+```
+
+---
+
+## Migration 005: customer orders
+
+Not required for the current checkout UI — the app still creates orders in
+client memory (`OrderContext`). This migration only prepares
+`public.orders` / `public.order_items` in Supabase. **Apply by hand in the
+SQL Editor when ready; nothing here runs automatically.** Requires 001,
+002 and 004.
+
+### What it creates
+
+- Sequence `orders_order_number_seq` + `generate_order_number()` → format
+  `DK-000001`, unique, concurrency-safe.
+- `public.orders`: `order_number`, `user_id`, `profile_id`, nullable
+  `company_id`, `status` (`new|processing|completed|cancelled`, default
+  `new`), money fields as `numeric(14,2)`, `comment`, timestamps.
+- `public.order_items`: snapshot `product_name` / `product_sku`, integer
+  `quantity`, money snapshots, `product_id` with `ON DELETE RESTRICT`.
+- RLS: authenticated users can SELECT/INSERT only their own orders and
+  items; no UPDATE/DELETE for clients. INSERT on `orders` requires
+  `user_id = profile_id = auth.uid()` and a `company_id` consistent with
+  `profiles.customer_type`.
+- Reuses `public.set_updated_at()` for `orders.updated_at`.
+
+### Verifying the result
+
+```sql
+select table_name from information_schema.tables
+where table_schema = 'public' and table_name in ('orders', 'order_items');
+
+select relname, relrowsecurity from pg_class
+where relname in ('orders', 'order_items');
+-- both should show relrowsecurity = true
+
+select polname, tablename, cmd from pg_policies
+where schemaname = 'public' and tablename in ('orders', 'order_items')
+order by tablename, polname;
 ```
 
 ---

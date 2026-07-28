@@ -138,6 +138,65 @@ export interface Favorite {
   created_at: string;
 }
 
+export type OrderStatus = "new" | "processing" | "completed" | "cancelled";
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  new: "Новый",
+  processing: "В обработке",
+  completed: "Завершён",
+  cancelled: "Отменён",
+};
+
+export interface Order {
+  id: string;
+  order_number: string;
+  user_id: string;
+  profile_id: string;
+  company_id: string | null;
+  status: OrderStatus;
+  subtotal: number;
+  discount: number;
+  total: number;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string | null;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  created_at: string;
+}
+
+/** Fields a client may supply when inserting into public.orders (RLS-scoped). */
+export type OrderInsert = {
+  user_id: string;
+  profile_id: string;
+  company_id?: string | null;
+  status?: OrderStatus;
+  subtotal: number;
+  discount?: number;
+  total: number;
+  comment?: string | null;
+};
+
+/** Fields a client may supply when inserting into public.order_items (RLS-scoped). */
+export type OrderItemInsert = {
+  order_id: string;
+  product_id: string;
+  product_name: string;
+  product_sku?: string | null;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+};
+
 // Row shape returned by the get_catalog() RPC (supabase/migrations/002_catalog_inventory_pricing.sql).
 export interface CatalogEntry {
   product_id: string;
