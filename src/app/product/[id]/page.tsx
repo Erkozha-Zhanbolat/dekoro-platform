@@ -1,16 +1,9 @@
 import { notFound } from "next/navigation";
-import { products } from "@/data/products";
-import ProductDetail from "@/components/ProductDetail";
 import SupabaseProductPage from "@/components/SupabaseProductPage";
-import { useSupabaseCatalog } from "@/lib/featureFlags";
 
 export function generateStaticParams() {
-  if (useSupabaseCatalog) {
-    // Product ids come from Supabase at runtime in this mode, so there is
-    // nothing to pre-render at build time — fall back to on-demand rendering.
-    return [];
-  }
-  return products.map((product) => ({ id: product.id }));
+  // Product ids come from Supabase at runtime — nothing to pre-render.
+  return [];
 }
 
 export default async function ProductPage({
@@ -20,15 +13,9 @@ export default async function ProductPage({
 }) {
   const { id } = await params;
 
-  if (useSupabaseCatalog) {
-    return <SupabaseProductPage productId={id} />;
-  }
-
-  const product = products.find((item) => item.id === id);
-
-  if (!product) {
+  if (!id) {
     notFound();
   }
 
-  return <ProductDetail product={product} />;
+  return <SupabaseProductPage productId={id} />;
 }

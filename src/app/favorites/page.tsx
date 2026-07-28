@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
-import { products as staticProducts } from "@/data/products";
 import { useAuth } from "@/context/AuthContext";
 import { useCatalog } from "@/context/CatalogContext";
 import { useFavorites } from "@/context/FavoritesContext";
@@ -18,8 +17,7 @@ export default function FavoritesPage() {
   const { favoriteProductIds, favoritesLoading, favoritesError } = useFavorites();
 
   // Signing in is only required in Supabase mode (favorites are tied to a
-  // user there). With the static catalog, favorites live in localStorage
-  // and are available to guests too.
+  // user there). With local favorites storage, guests can keep favorites too.
   const requiresSignIn = useSupabaseCatalog && !user;
 
   if (requiresSignIn) {
@@ -47,12 +45,11 @@ export default function FavoritesPage() {
     );
   }
 
-  const products = useSupabaseCatalog ? catalog.products : staticProducts;
-  const isCatalogLoading = useSupabaseCatalog && catalog.loading;
-  const catalogError = useSupabaseCatalog ? catalog.error : null;
-
-  const isLoading = isCatalogLoading || favoritesLoading;
-  const errorMessage = catalogError ?? favoritesError;
+  const products = catalog.products;
+  const isLoading = catalog.loading || favoritesLoading;
+  const errorMessage = catalog.error
+    ? "Не удалось загрузить каталог"
+    : favoritesError;
 
   const favoriteProducts = products.filter((product) =>
     favoriteProductIds.includes(getFavoriteProductId(product)),

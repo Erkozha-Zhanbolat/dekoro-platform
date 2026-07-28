@@ -84,7 +84,7 @@ export default function ProductCard({ product }: { product: Product }) {
       <div className="mt-3 flex items-baseline gap-1">
         {product.salePrice === null ? (
           <span className="text-sm font-medium text-neutral-500">
-            Цена доступна после авторизации
+            Цена по запросу
           </span>
         ) : (
           <>

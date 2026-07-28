@@ -2,10 +2,7 @@
 
 import { useMemo, useState } from "react";
 import ProductCard from "@/components/ProductCard";
-import { products as staticProducts } from "@/data/products";
-import { PRODUCT_CATEGORIES } from "@/types/product";
 import { useCatalog } from "@/context/CatalogContext";
-import { useSupabaseCatalog } from "@/lib/featureFlags";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -23,15 +20,10 @@ export default function CatalogPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
 
-  const products = useSupabaseCatalog ? catalog.products : staticProducts;
-  const categoryNames = useSupabaseCatalog
-    ? catalog.categories.map((item) => item.name)
-    : [...PRODUCT_CATEGORIES];
-
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return products.filter((product) => {
+    return catalog.products.filter((product) => {
       const matchesQuery =
         normalizedQuery.length === 0 ||
         product.name.toLowerCase().includes(normalizedQuery) ||
@@ -40,7 +32,7 @@ export default function CatalogPage() {
 
       return matchesQuery && matchesCategory;
     });
-  }, [products, query, category]);
+  }, [catalog.products, query, category]);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -71,7 +63,7 @@ export default function CatalogPage() {
         >
           Все категории
         </button>
-        {categoryNames.map((item) => (
+        {catalog.categoryNames.map((item) => (
           <button
             key={item}
             type="button"
@@ -83,11 +75,11 @@ export default function CatalogPage() {
         ))}
       </div>
 
-      {useSupabaseCatalog && catalog.loading ? (
+      {catalog.loading ? (
         <p className="mt-10 text-center text-neutral-500">Загрузка каталога...</p>
-      ) : useSupabaseCatalog && catalog.error ? (
+      ) : catalog.error ? (
         <p className="mt-10 text-center text-red-600">
-          Не удалось загрузить каталог: {catalog.error}
+          Не удалось загрузить каталог
         </p>
       ) : (
         <>

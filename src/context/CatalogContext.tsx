@@ -2,65 +2,21 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
-import { PRODUCT_CATEGORIES } from "@/types/product";
-import type { Product as StaticProduct, ProductCategory } from "@/types/product";
-import type { CatalogEntry, Category } from "@/types/database";
-import { useSupabaseCatalog } from "@/lib/featureFlags";
+import {
+  deriveCategoryNames,
+  getCatalog,
+  mapCatalogProductToProduct,
+} from "@/lib/catalog";
+import type { Product } from "@/types/product";
 
 interface CatalogContextValue {
-  categories: Category[];
-  products: StaticProduct[];
+  /** Category names derived from loaded products (no separate query). */
+  categoryNames: string[];
+  products: Product[];
   loading: boolean;
   error: string | null;
   refreshCatalog: () => Promise<void>;
-}
-
-interface CatalogData {
-  categories: Category[];
-  products: StaticProduct[];
-}
-
-const KNOWN_CATEGORIES: readonly string[] = PRODUCT_CATEGORIES;
-
-function mapCatalogEntryToProduct(entry: CatalogEntry): StaticProduct {
-  return {
-    id: entry.product_id,
-    name: entry.name,
-    sku: entry.sku,
-    originalSku: entry.original_sku ?? entry.sku,
-    // Demo/seed category names are expected to match PRODUCT_CATEGORIES;
-    // fall back to the first known category for any future mismatch
-    // instead of breaking the whole catalog render.
-    category: KNOWN_CATEGORIES.includes(entry.category ?? "")
-      ? (entry.category as ProductCategory)
-      : PRODUCT_CATEGORIES[0],
-    dimensions: entry.dimensions,
-    unit: entry.unit,
-    stock: entry.available_stock,
-    reserved: 0,
-    salePrice: entry.sale_price,
-    image: entry.image,
-    isPromotion: entry.is_promotion,
-  };
-}
-
-async function fetchCatalogData(): Promise<CatalogData> {
-  const [categoriesResult, catalogResult] = await Promise.all([
-    supabase.from("categories").select("*").order("sort_order", { ascending: true }),
-    supabase.rpc("get_catalog"),
-  ]);
-
-  const errorMessage = categoriesResult.error?.message ?? catalogResult.error?.message ?? null;
-  if (errorMessage) {
-    throw new Error(errorMessage);
-  }
-
-  const categories = (categoriesResult.data as Category[] | null) ?? [];
-  const entries = (catalogResult.data as CatalogEntry[] | null) ?? [];
-
-  return { categories, products: entries.map(mapCatalogEntryToProduct) };
 }
 
 const CatalogContext = createContext<CatalogContextValue | undefined>(undefined);
@@ -69,25 +25,27 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const currentUserId = user?.id ?? null;
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<StaticProduct[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loadedForUserId, setLoadedForUserId] = useState<string | null | undefined>(undefined);
+  // undefined = not loaded yet for this auth identity
+  const [loadedForUserId, setLoadedForUserId] = useState<string | null | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
-    if (!useSupabaseCatalog || authLoading || loadedForUserId === currentUserId) {
+    // Re-fetch when auth identity settles/changes so sale_price personalizes.
+    if (authLoading || loadedForUserId === currentUserId) {
       return;
     }
 
     let ignore = false;
 
-    fetchCatalogData()
-      .then((data) => {
+    getCatalog()
+      .then((entries) => {
         if (ignore) {
           return;
         }
-        setCategories(data.categories);
-        setProducts(data.products);
+        setProducts(entries.map(mapCatalogProductToProduct));
         setError(null);
         setLoadedForUserId(currentUserId);
       })
@@ -95,8 +53,11 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
         if (ignore) {
           return;
         }
+        setProducts([]);
         setError(
-          caughtError instanceof Error ? caughtError.message : "Не удалось загрузить каталог",
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Не удалось загрузить каталог",
         );
         setLoadedForUserId(currentUserId);
       });
@@ -107,27 +68,27 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   }, [authLoading, currentUserId, loadedForUserId]);
 
   const refreshCatalog = useCallback(async () => {
-    if (!useSupabaseCatalog) {
-      return;
-    }
     try {
-      const data = await fetchCatalogData();
-      setCategories(data.categories);
-      setProducts(data.products);
+      const entries = await getCatalog();
+      setProducts(entries.map(mapCatalogProductToProduct));
       setError(null);
+      setLoadedForUserId(currentUserId);
     } catch (caughtError) {
+      setProducts([]);
       setError(
-        caughtError instanceof Error ? caughtError.message : "Не удалось загрузить каталог",
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Не удалось загрузить каталог",
       );
     }
-  }, []);
+  }, [currentUserId]);
 
-  const loading =
-    useSupabaseCatalog && (authLoading || loadedForUserId !== currentUserId);
+  const loading = authLoading || loadedForUserId !== currentUserId;
+  const categoryNames = useMemo(() => deriveCategoryNames(products), [products]);
 
   const value = useMemo<CatalogContextValue>(
-    () => ({ categories, products, loading, error, refreshCatalog }),
-    [categories, products, loading, error, refreshCatalog],
+    () => ({ categoryNames, products, loading, error, refreshCatalog }),
+    [categoryNames, products, loading, error, refreshCatalog],
   );
 
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;

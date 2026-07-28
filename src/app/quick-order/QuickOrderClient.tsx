@@ -1,12 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { products as staticProducts } from "@/data/products";
-import { PRODUCT_CATEGORIES } from "@/types/product";
 import type { Product } from "@/types/product";
 import { useCatalog } from "@/context/CatalogContext";
 import { useCart } from "@/context/CartContext";
-import { useSupabaseCatalog } from "@/lib/featureFlags";
 import { getAvailableStock } from "@/lib/inventory";
 import { formatPrice } from "@/lib/formatPrice";
 import { QuickOrderRow, QUICK_ORDER_GRID_TEMPLATE } from "@/components/QuickOrderRow";
@@ -47,10 +44,8 @@ export default function QuickOrderClient() {
   const [selection, setSelection] = useState<QuickOrderSelection>({});
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
 
-  const products = useSupabaseCatalog ? catalog.products : staticProducts;
-  const categoryNames = useSupabaseCatalog
-    ? catalog.categories.map((item) => item.name)
-    : [...PRODUCT_CATEGORIES];
+  const products = catalog.products;
+  const categoryNames = catalog.categoryNames;
 
   const quantityInCartByProductId = useMemo(() => {
     const map = new Map<string, number>();
@@ -211,11 +206,11 @@ export default function QuickOrderClient() {
         ))}
       </div>
 
-      {useSupabaseCatalog && catalog.loading ? (
+      {catalog.loading ? (
         <p className="mt-10 text-center text-neutral-500">Загрузка каталога...</p>
-      ) : useSupabaseCatalog && catalog.error ? (
+      ) : catalog.error ? (
         <p className="mt-10 text-center text-red-600">
-          Не удалось загрузить каталог: {catalog.error}
+          Не удалось загрузить каталог
         </p>
       ) : (
         <>
