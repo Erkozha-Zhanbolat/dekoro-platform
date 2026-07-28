@@ -1,21 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import type { FormEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { getSafeNextPath, isSafeNextPath } from "@/lib/safeNextPath";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const rawNext = searchParams.get("next");
+  const nextPath = getSafeNextPath(rawNext);
+  const registerHref =
+    rawNext != null && isSafeNextPath(rawNext)
+      ? `/register?next=${encodeURIComponent(rawNext)}`
+      : "/register";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -31,7 +40,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/profile");
+    router.replace(nextPath);
   }
 
   return (
@@ -86,10 +95,25 @@ export default function LoginPage() {
 
       <p className="mt-6 text-sm text-neutral-600">
         Нет аккаунта?{" "}
-        <Link href="/register" className={`font-medium text-[#0F766E] hover:underline ${focusRing}`}>
+        <Link href={registerHref} className={`font-medium text-[#0F766E] hover:underline ${focusRing}`}>
           Зарегистрироваться
         </Link>
       </p>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-md px-6 py-16">
+          <h1 className="text-3xl font-bold text-neutral-800">Вход</h1>
+          <p className="mt-4 text-neutral-600">Загрузка...</p>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

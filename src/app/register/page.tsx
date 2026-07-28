@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import type { FormEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
 import type { SignUpMetadata } from "@/context/AuthContext";
+import { getSafeNextPath, isSafeNextPath } from "@/lib/safeNextPath";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -100,8 +101,9 @@ function buildSignUpMetadata(
   };
 }
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signUp } = useAuth();
   const [customerType, setCustomerType] = useState<CustomerType>("company");
   const [form, setForm] = useState<FormState>(initialFormState);
@@ -109,6 +111,13 @@ export default function RegisterPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
+
+  const rawNext = searchParams.get("next");
+  const nextPath = getSafeNextPath(rawNext);
+  const loginHref =
+    rawNext != null && isSafeNextPath(rawNext)
+      ? `/login?next=${encodeURIComponent(rawNext)}`
+      : "/login";
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -154,7 +163,7 @@ export default function RegisterPage() {
       return;
     }
 
-    router.push("/profile");
+    router.replace(nextPath);
   }
 
   if (needsEmailConfirmation) {
@@ -168,7 +177,7 @@ export default function RegisterPage() {
           личный кабинет.
         </p>
         <Link
-          href="/login"
+          href={loginHref}
           className={`mt-6 inline-block rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] ${focusRing}`}
         >
           Перейти ко входу
@@ -288,11 +297,26 @@ export default function RegisterPage() {
 
       <p className="mt-6 text-sm text-neutral-600">
         Уже есть аккаунт?{" "}
-        <Link href="/login" className={`font-medium text-[#0F766E] hover:underline ${focusRing}`}>
+        <Link href={loginHref} className={`font-medium text-[#0F766E] hover:underline ${focusRing}`}>
           Войти
         </Link>
       </p>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-2xl px-6 py-16">
+          <h1 className="text-3xl font-bold text-neutral-800">Регистрация</h1>
+          <p className="mt-4 text-neutral-600">Загрузка...</p>
+        </div>
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   );
 }
 

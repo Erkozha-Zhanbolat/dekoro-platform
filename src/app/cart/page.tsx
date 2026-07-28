@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
+import { useAuth } from "@/context/AuthContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { getAvailableStock } from "@/lib/inventory";
 import { QuantitySelector } from "@/components/QuantitySelector";
@@ -10,11 +11,27 @@ import { QuantitySelector } from "@/components/QuantitySelector";
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
+const CHECKOUT_PATH = "/checkout";
+
 export default function CartPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const { items, totalAmount, hasUnpricedItems, setItemQuantity, removeItem } =
     useCart();
   const isEmpty = items.length === 0;
+
+  function handleCheckout() {
+    if (authLoading || isEmpty) {
+      return;
+    }
+
+    if (user) {
+      router.push(CHECKOUT_PATH);
+      return;
+    }
+
+    router.push(`/login?next=${encodeURIComponent(CHECKOUT_PATH)}`);
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -115,11 +132,11 @@ export default function CartPage() {
         </Link>
         <button
           type="button"
-          onClick={() => router.push("/checkout")}
-          disabled={isEmpty}
+          onClick={handleCheckout}
+          disabled={isEmpty || authLoading}
           className={`rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 ${focusRing}`}
         >
-          Оформить заказ
+          {authLoading ? "Загрузка..." : "Оформить заказ"}
         </button>
       </div>
     </div>

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useOrders } from "@/context/OrderContext";
 import { FULFILLMENT_LABELS } from "@/context/OrderContext";
@@ -82,10 +83,21 @@ function validate(form: FormState): FormErrors {
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const { items, totalAmount, hasUnpricedItems, clearCart } = useCart();
   const { createOrder } = useOrders();
   const [form, setForm] = useState<FormState>(initialFormState);
   const [errors, setErrors] = useState<FormErrors>({});
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
+      router.replace(`/login?next=${encodeURIComponent("/checkout")}`);
+    }
+  }, [authLoading, user, router]);
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -119,6 +131,17 @@ export default function CheckoutPage() {
 
     clearCart();
     router.push(`/order-success?orderId=${order.id}`);
+  }
+
+  if (authLoading || !user) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <h1 className="text-3xl font-bold text-neutral-800">
+          Оформление заказа
+        </h1>
+        <p className="mt-4 text-neutral-600">Загрузка...</p>
+      </div>
+    );
   }
 
   if (items.length === 0) {
