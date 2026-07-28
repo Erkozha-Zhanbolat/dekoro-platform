@@ -35,20 +35,23 @@ migration is verified):**
 6. Run `supabase/migrations/005_orders.sql` (requires steps 1, 2 and 5;
    creates `orders` / `order_items` with RLS — see "Migration 005" below).
    Does not change the checkout UI; apply by hand when ready.
-7. Set in `.env.local`:
+7. Run `supabase/migrations/006_create_order_rpc.sql` (requires step 6;
+   adds `create_order()` RPC and revokes direct client INSERT on orders —
+   see "Migration 006" below). Apply by hand; no frontend wiring yet.
+8. Set in `.env.local`:
    ```
    NEXT_PUBLIC_USE_SUPABASE_CATALOG=true
    NEXT_PUBLIC_USE_SUPABASE_FAVORITES=true
    ```
-8. Restart `npm run dev`.
-9. Register or sign in (favorites now require a signed-in user).
-10. Add a product to favorites (heart icon on a product card or product page).
-11. Check the `favorites` table in the Table Editor.
-12. Open `/favorites`.
-13. Remove a product from favorites and confirm it disappears immediately.
+9. Restart `npm run dev`.
+10. Register or sign in (favorites now require a signed-in user).
+11. Add a product to favorites (heart icon on a product card or product page).
+12. Check the `favorites` table in the Table Editor.
+13. Open `/favorites`.
+14. Remove a product from favorites and confirm it disappears immediately.
 
-Steps 1–3 alone (without step 4, 5, 6, or the flags) leave the app exactly
-as it was before this catalog work — `/catalog`, `/product/[id]` and `/cart`
+Steps 1–3 alone (without step 4–7 or the flags) leave the app exactly as
+it was before this catalog work — `/catalog`, `/product/[id]` and `/cart`
 should look identical to the static catalog either way.
 
 Each SQL file starts with a small guard block that raises a clear error if
@@ -216,6 +219,43 @@ where relname in ('orders', 'order_items');
 select polname, tablename, cmd from pg_policies
 where schemaname = 'public' and tablename in ('orders', 'order_items')
 order by tablename, polname;
+```
+
+---
+
+## Migration 006: create_order RPC
+
+Not wired to the checkout UI yet. **Apply by hand after 005.** Adds the
+only server-side entry point for creating customer orders.
+
+### What it does
+
+- Revokes direct `INSERT` on `orders` / `order_items` from `authenticated`
+  and drops the insert RLS policies from 005 (SELECT policies stay).
+- Adds `public.create_order(p_items jsonb, p_comment text default null)`
+  (SECURITY DEFINER, locked `search_path`):
+  - requires `auth.uid()` and an active profile;
+  - sets `company_id` from the profile (`null` for individual, required
+    company row for company);
+  - accepts only `{ product_id, quantity }` lines — no money fields;
+  - resolves unit price via `get_product_price()`;
+  - requires `products.status = 'active'`, a non-null price, and enough
+    available stock (no reservation yet);
+  - computes `line_total` / `subtotal` / `total` in SQL (`discount = 0`);
+  - inserts `orders` + `order_items` atomically;
+  - returns `(id, order_number, total, created_at)`.
+
+### Verifying the result
+
+```sql
+select proname from pg_proc
+where pronamespace = 'public'::regnamespace and proname = 'create_order';
+
+-- As an authenticated user (not from the SQL Editor as postgres):
+-- select * from public.create_order(
+--   '[{"product_id":"<uuid>","quantity":1}]'::jsonb,
+--   'test'
+-- );
 ```
 
 ---

@@ -197,6 +197,20 @@ export type OrderItemInsert = {
   line_total: number;
 };
 
+/** Payload element for public.create_order(p_items jsonb, ...). */
+export type CreateOrderItemInput = {
+  product_id: string;
+  quantity: number;
+};
+
+/** Row returned by public.create_order(...). */
+export type CreateOrderResult = {
+  id: string;
+  order_number: string;
+  total: number;
+  created_at: string;
+};
+
 // Row shape returned by the get_catalog() RPC (supabase/migrations/002_catalog_inventory_pricing.sql).
 export interface CatalogEntry {
   product_id: string;
