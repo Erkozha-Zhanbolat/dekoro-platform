@@ -1,5 +1,16 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+
 export default function Footer() {
+  const pathname = usePathname();
   const year = new Date().getFullYear();
+
+  // Same reasoning as Header.tsx: the Staff Platform has its own shell and
+  // doesn't show the storefront footer.
+  if (pathname?.startsWith("/staff")) {
+    return null;
+  }
 
   return (
     <footer className="border-t border-neutral-200 bg-white">

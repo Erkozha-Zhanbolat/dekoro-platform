@@ -8,6 +8,28 @@ export const USER_ROLE_LABELS: Record<UserRole, string> = {
   admin: "Администратор",
 };
 
+/**
+ * Roles that may enter the internal Staff Platform (/staff/**).
+ * Matches supabase/migrations/010_staff_role_access.sql's
+ * has_staff_role() allow-list — keep both in sync if this ever changes.
+ */
+export const STAFF_ROLES: readonly UserRole[] = ["manager", "accountant", "warehouse", "admin"];
+
+/** True for any role other than "client" (or a missing role). */
+export function isStaffRole(role: UserRole | null | undefined): boolean {
+  return !!role && STAFF_ROLES.includes(role);
+}
+
+/**
+ * Single source of truth for "can this role open /staff?". Currently
+ * identical to isStaffRole(), kept as a separate name so access rules for
+ * the Staff Platform can diverge from the general staff/client distinction
+ * later without touching every call site.
+ */
+export function canAccessStaff(role: UserRole | null | undefined): boolean {
+  return isStaffRole(role);
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -253,3 +275,67 @@ export interface CatalogEntry {
   image: string | null;
   is_promotion: boolean;
 }
+
+// ============================================================
+// Staff Platform — manual orders (supabase/migrations/011_staff_manual_orders.sql)
+// ============================================================
+
+/** Row returned by public.staff_search_clients(p_query, p_limit). */
+export type StaffClientSearchResult = {
+  profile_id: string;
+  company_id: string | null;
+  full_name: string;
+  company_name: string | null;
+  phone: string | null;
+  email: string | null;
+};
+
+/** Row returned by public.staff_search_products(p_query, p_limit). */
+export type StaffProductSearchResult = {
+  product_id: string;
+  name: string;
+  sku: string;
+  category: string | null;
+  unit: string;
+  price: number | null;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  physical_quantity: number;
+  reserved_quantity: number;
+  available_quantity: number;
+};
+
+/** Row returned by public.staff_create_order(p_client_profile_id). */
+export type StaffCreateOrderResult = {
+  id: string;
+  order_number: string;
+  status: OrderStatus;
+  created_at: string;
+};
+
+/**
+ * Row returned by public.staff_add_order_item() /
+ * public.staff_update_order_item_quantity() / public.staff_remove_order_item()
+ * — all three return the full, freshly recalculated public.orders row
+ * (a single composite row, not a set).
+ */
+export type StaffOrderMutationResult = {
+  id: string;
+  order_number: string;
+  user_id: string;
+  profile_id: string;
+  company_id: string | null;
+  status: OrderStatus;
+  subtotal: number;
+  discount: number;
+  total: number;
+  comment: string | null;
+  delivery_type: DeliveryType;
+  contact_name: string;
+  contact_phone: string;
+  contact_email: string | null;
+  delivery_address: string | null;
+  delivery_comment: string | null;
+  created_at: string;
+  updated_at: string;
+};

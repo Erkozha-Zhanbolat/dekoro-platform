@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import type { SVGProps } from "react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { useFavorites } from "@/context/FavoritesContext";
+import { canAccessStaff } from "@/types/database";
 import { enableQuickOrder, useSupabaseCatalog, useSupabaseFavorites } from "@/lib/featureFlags";
 
 // Shared by both the desktop nav and the mobile menu below, so the Quick
@@ -154,8 +157,10 @@ function SearchField({ id }: { id: string }) {
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const pathname = usePathname();
   const { totalQuantity } = useCart();
   const { user } = useAuth();
+  const { profile } = useProfile();
   const { favoriteProductIds } = useFavorites();
   const profileHref = user ? "/profile" : "/login";
   // Local (static catalog) favorites work for guests too, so the count is
@@ -165,6 +170,14 @@ export default function Header() {
   const favoritesLabel = showFavoritesCount
     ? `Избранное (${favoriteProductIds.length})`
     : "Избранное";
+  const showStaffLink = canAccessStaff(profile?.role ?? null);
+
+  // The Staff Platform (/staff/**) has its own dedicated shell/navigation
+  // (see src/components/staff/StaffShell.tsx) — the customer-facing header
+  // is only for the storefront.
+  if (pathname?.startsWith("/staff")) {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
@@ -202,6 +215,14 @@ export default function Header() {
           </form>
 
           <nav className="ml-auto hidden items-center gap-6 md:flex">
+            {showStaffLink && (
+              <Link
+                href="/staff"
+                className={`text-sm font-medium text-[#0F766E] transition-colors hover:text-[#0c5f58] rounded-sm ${focusRing}`}
+              >
+                Панель сотрудников
+              </Link>
+            )}
             <Link
               href="/orders"
               className={`text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
@@ -286,6 +307,15 @@ export default function Header() {
                 {link.label}
               </Link>
             ))}
+            {showStaffLink && (
+              <Link
+                href="/staff"
+                onClick={() => setIsMenuOpen(false)}
+                className={`rounded-md px-2 py-2 text-sm font-medium text-[#0F766E] transition-colors hover:bg-neutral-50 ${focusRing}`}
+              >
+                Панель сотрудников
+              </Link>
+            )}
             <Link
               href="/orders"
               onClick={() => setIsMenuOpen(false)}
