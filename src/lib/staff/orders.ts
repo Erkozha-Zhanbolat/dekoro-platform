@@ -5,29 +5,16 @@ import type {
   StaffCreateOrderResult,
   StaffOrderMutationResult,
 } from "@/types/database";
+import { ORDER_STATUS_LABELS, ORDER_WORKFLOW_STATUSES } from "@/types/database";
 
 /**
- * Staff-facing order data access
- * (supabase/migrations/010_staff_role_access.sql,
- * supabase/migrations/011_staff_manual_orders.sql).
+ * Staff-facing order data access (migrations 010–012).
  *
- * Deliberately separate from src/lib/orders.ts (client-facing, "own orders
- * only"): the read functions below rely on the orders_select_staff /
- * order_items_select_staff RLS policies, which only manager / accountant /
- * warehouse / admin profiles satisfy. A client account calling these gets
- * exactly the same rows src/lib/orders.ts would already give them (their
- * own), never more — the staff policies are additive, not a bypass.
- *
- * The mutation functions below (createStaffOrder / addStaffOrderItem /
- * updateStaffOrderItemQuantity / removeStaffOrderItem) go through the
- * SECURITY DEFINER RPCs added in 011_staff_manual_orders.sql, restricted to
- * manager/admin internally — there is still no direct
- * INSERT/UPDATE/DELETE grant on orders/order_items/inventory for staff.
- * Order status changes beyond manual creation (confirmation, invoicing,
- * picking/shipping, etc.) remain out of scope and unimplemented.
+ * Orders / order_items reads use RLS staff SELECT from 010.
+ * order_status_history and order_internal_notes have NO table grants —
+ * they are read only via staff_list_* SECURITY DEFINER RPCs.
  */
 
-/** Row shape shared by the dashboard's "recent orders" and the /staff/orders list. */
 export type StaffOrderListItem = {
   id: string;
   order_number: string;
@@ -38,6 +25,9 @@ export type StaffOrderListItem = {
   contact_name: string;
   contact_phone: string;
   contact_email: string | null;
+  assigned_manager_id: string | null;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   itemCount: number;
   totalQuantity: number;
 };
@@ -52,6 +42,9 @@ type StaffOrderListRow = {
   contact_name: string;
   contact_phone: string;
   contact_email: string | null;
+  assigned_manager_id: string | null;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   order_items: { quantity: number }[] | null;
 };
 
@@ -67,39 +60,33 @@ function mapListRow(row: StaffOrderListRow): StaffOrderListItem {
     contact_name: row.contact_name,
     contact_phone: row.contact_phone,
     contact_email: row.contact_email,
+    assigned_manager_id: row.assigned_manager_id,
+    payment_due_at: row.payment_due_at,
+    reservation_expires_at: row.reservation_expires_at,
     itemCount: items.length,
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
   };
 }
 
-/** Escapes PostgREST ilike wildcards so a user's search text is matched literally. */
 function escapeIlikeValue(value: string): string {
   return value.replace(/[%_]/g, (match) => `\\${match}`);
 }
 
 export type StaffOrdersQuery = {
-  /** Matches order_number / contact_name / contact_phone / contact_email (case-insensitive, partial). */
   search?: string;
-  /** Omit or pass "all" for no status filter. */
   status?: OrderStatus | "all";
-  /** Defaults to 100 — a plain limit for this step, not full pagination. */
   limit?: number;
 };
 
 const DEFAULT_STAFF_ORDERS_LIMIT = 100;
 
-/**
- * Lists orders across ALL customers (RLS-scoped to staff roles), newest
- * first. One round trip: order_items is embedded, so item/quantity counts
- * never require a separate query per order.
- */
 export async function getStaffOrders(
   query: StaffOrdersQuery = {},
 ): Promise<StaffOrderListItem[]> {
   let request = supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, status, total, delivery_type, contact_name, contact_phone, contact_email, order_items(quantity)",
+      "id, order_number, created_at, status, total, delivery_type, contact_name, contact_phone, contact_email, assigned_manager_id, payment_due_at, reservation_expires_at, order_items(quantity)",
     )
     .order("created_at", { ascending: false })
     .limit(query.limit ?? DEFAULT_STAFF_ORDERS_LIMIT);
@@ -127,11 +114,9 @@ export async function getStaffOrders(
     throw new Error(error.message || "Не удалось загрузить заказы");
   }
 
-  const rows = (data as StaffOrderListRow[] | null) ?? [];
-  return rows.map(mapListRow);
+  return ((data as StaffOrderListRow[] | null) ?? []).map(mapListRow);
 }
 
-/** A single line item as shown on the staff order detail page. */
 export type StaffOrderDetailItem = {
   id: string;
   product_id: string;
@@ -141,11 +126,43 @@ export type StaffOrderDetailItem = {
   total: number;
 };
 
-/** Full detail for a single order, as shown on /staff/orders/[id]. */
+export type StaffOrderStatusHistoryItem = {
+  id: string;
+  order_id: string;
+  from_status: OrderStatus | null;
+  to_status: OrderStatus;
+  changed_by: string;
+  changed_by_name: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type StaffOrderInternalNoteItem = {
+  id: string;
+  order_id: string;
+  body: string;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type StaffOrderActivityItem = {
+  id: string;
+  order_id: string;
+  event_type: "manager_assigned" | "manager_unassigned" | "deadlines_updated";
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+};
+
 export type StaffOrderDetail = {
   id: string;
   order_number: string;
   created_at: string;
+  updated_at: string;
   status: OrderStatus;
   subtotal: number;
   discount: number;
@@ -157,32 +174,48 @@ export type StaffOrderDetail = {
   delivery_type: DeliveryType;
   delivery_address: string | null;
   delivery_comment: string | null;
+  assigned_manager_id: string | null;
+  assigned_manager_name: string | null;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   items: StaffOrderDetailItem[];
+  statusHistory: StaffOrderStatusHistoryItem[];
+  activityLog: StaffOrderActivityItem[];
+  internalNotes: StaffOrderInternalNoteItem[];
 };
 
-type StaffOrderDetailRow = Omit<StaffOrderDetail, "items"> & {
+type StaffOrderDetailRow = {
+  id: string;
+  order_number: string;
+  created_at: string;
+  updated_at: string;
+  status: OrderStatus;
+  subtotal: number;
+  discount: number;
+  total: number;
+  comment: string | null;
+  contact_name: string;
+  contact_phone: string;
+  contact_email: string | null;
+  delivery_type: DeliveryType;
+  delivery_address: string | null;
+  delivery_comment: string | null;
+  assigned_manager_id: string | null;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   order_items: StaffOrderDetailItem[] | null;
 };
 
-/**
- * Loads a single order (with its line items) for staff, regardless of
- * which customer it belongs to (RLS-scoped to staff roles). Returns null
- * if the order does not exist, or if the caller's role isn't allowed to
- * see it (both look identical from the caller's point of view, same as
- * src/lib/orders.ts#getOrder for clients).
- */
 export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | null> {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, status, subtotal, discount, total, comment, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, order_items(id, product_id, product_name, quantity, unit_price, total:line_total)",
+      "id, order_number, created_at, updated_at, status, subtotal, discount, total, comment, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, assigned_manager_id, payment_due_at, reservation_expires_at, order_items(id, product_id, product_name, quantity, unit_price, total:line_total)",
     )
     .eq("id", id)
     .single();
 
   if (error) {
-    // PGRST116: .single() found no row (deleted / RLS-hidden). 22P02: id is
-    // not a valid uuid. Both mean "not found" from the caller's point of view.
     if (error.code === "PGRST116" || error.code === "22P02") {
       return null;
     }
@@ -192,10 +225,26 @@ export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | 
   const row = data as StaffOrderDetailRow;
   const items = row.order_items ?? [];
 
+  const [history, notes, activity, assigneeName] = await Promise.all([
+    listStaffOrderStatusHistory(id),
+    listStaffOrderInternalNotes(id),
+    listStaffOrderActivity(id),
+    (async () => {
+      const { data, error: nameError } = await supabase.rpc("staff_get_order_assignee_name", {
+        p_order_id: id,
+      });
+      if (nameError) {
+        return null;
+      }
+      return (data as string | null) ?? null;
+    })(),
+  ]);
+
   return {
     id: row.id,
     order_number: row.order_number,
     created_at: row.created_at,
+    updated_at: row.updated_at,
     status: row.status,
     subtotal: Number(row.subtotal),
     discount: Number(row.discount),
@@ -207,6 +256,10 @@ export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | 
     delivery_type: row.delivery_type,
     delivery_address: row.delivery_address,
     delivery_comment: row.delivery_comment,
+    assigned_manager_id: row.assigned_manager_id,
+    assigned_manager_name: assigneeName,
+    payment_due_at: row.payment_due_at,
+    reservation_expires_at: row.reservation_expires_at,
     items: items.map((item) => ({
       id: item.id,
       product_id: item.product_id,
@@ -215,17 +268,14 @@ export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | 
       unit_price: Number(item.unit_price),
       total: Number(item.total),
     })),
+    statusHistory: history,
+    activityLog: activity,
+    internalNotes: notes,
   };
 }
 
-/** Order counts by current status, for the /staff dashboard cards. */
 export type StaffOrderStats = Record<OrderStatus, number> & { total: number };
 
-/**
- * Computes order counts by status in a single round trip (selects only the
- * `status` column for every order visible to this caller, then reduces in
- * memory) instead of one query per status or per order.
- */
 export async function getStaffOrderStats(): Promise<StaffOrderStats> {
   const { data, error } = await supabase.from("orders").select("status");
 
@@ -234,11 +284,14 @@ export async function getStaffOrderStats(): Promise<StaffOrderStats> {
   }
 
   const rows = (data as { status: OrderStatus }[] | null) ?? [];
-
   const stats: StaffOrderStats = {
     total: rows.length,
     new: 0,
-    processing: 0,
+    awaiting_payment: 0,
+    paid: 0,
+    picking: 0,
+    ready_for_shipment: 0,
+    shipped: 0,
     completed: 0,
     cancelled: 0,
   };
@@ -250,12 +303,94 @@ export async function getStaffOrderStats(): Promise<StaffOrderStats> {
   return stats;
 }
 
-/**
- * Creates an empty ('new', no items, no reservation) order for an existing
- * client profile via public.staff_create_order(). manager/admin only —
- * enforced inside the RPC, not by RLS. Returns the new order's id/number so
- * the caller can redirect to /staff/orders/[id].
- */
+export type StaffManagerOption = {
+  id: string;
+  full_name: string;
+  role: "manager" | "admin";
+};
+
+export async function listAssignableManagers(): Promise<StaffManagerOption[]> {
+  const { data, error } = await supabase.rpc("staff_list_assignable_managers");
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить список менеджеров");
+  }
+
+  return ((data as StaffManagerOption[] | null) ?? []).map((row) => ({
+    id: row.id,
+    full_name: row.full_name,
+    role: row.role as "manager" | "admin",
+  }));
+}
+
+export async function listStaffOrderStatusHistory(
+  orderId: string,
+): Promise<StaffOrderStatusHistoryItem[]> {
+  const { data, error } = await supabase.rpc("staff_list_order_status_history", {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить историю статусов");
+  }
+
+  return ((data as StaffOrderStatusHistoryItem[] | null) ?? []).map((entry) => ({
+    id: entry.id,
+    order_id: entry.order_id,
+    from_status: entry.from_status,
+    to_status: entry.to_status,
+    changed_by: entry.changed_by,
+    changed_by_name: entry.changed_by_name,
+    note: entry.note,
+    created_at: entry.created_at,
+  }));
+}
+
+export async function listStaffOrderInternalNotes(
+  orderId: string,
+): Promise<StaffOrderInternalNoteItem[]> {
+  const { data, error } = await supabase.rpc("staff_list_order_internal_notes", {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить заметки");
+  }
+
+  return ((data as StaffOrderInternalNoteItem[] | null) ?? []).map((note) => ({
+    id: note.id,
+    order_id: note.order_id,
+    body: note.body,
+    created_by: note.created_by,
+    created_by_name: note.created_by_name,
+    created_at: note.created_at,
+    updated_at: note.updated_at,
+  }));
+}
+
+export async function listStaffOrderActivity(
+  orderId: string,
+): Promise<StaffOrderActivityItem[]> {
+  const { data, error } = await supabase.rpc("staff_list_order_activity", {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить активность заказа");
+  }
+
+  return ((data as StaffOrderActivityItem[] | null) ?? []).map((entry) => ({
+    id: entry.id,
+    order_id: entry.order_id,
+    event_type: entry.event_type,
+    description: entry.description,
+    metadata: entry.metadata,
+    created_by: entry.created_by,
+    created_by_name: entry.created_by_name,
+    created_at: entry.created_at,
+  }));
+}
+
 export async function createStaffOrder(
   clientProfileId: string,
 ): Promise<StaffCreateOrderResult> {
@@ -268,25 +403,12 @@ export async function createStaffOrder(
   }
 
   const [result] = (data as StaffCreateOrderResult[] | null) ?? [];
-
   if (!result) {
     throw new Error("Не удалось создать заказ");
   }
-
   return result;
 }
 
-/**
- * Adds a product to a 'new' order via public.staff_add_order_item(),
- * increasing the existing line's quantity if the product is already on the
- * order. Reserves the added quantity and recalculates the order's totals
- * atomically server-side. Throws if the requested quantity exceeds the
- * currently available stock, or the order isn't in status 'new'.
- *
- * Returns the fresh order row; callers should still re-fetch the full
- * order (getStaffOrderById) for the up-to-date item list rather than
- * trying to patch state locally (no optimistic updates in this UI).
- */
 export async function addStaffOrderItem(
   orderId: string,
   productId: string,
@@ -297,20 +419,12 @@ export async function addStaffOrderItem(
     p_product_id: productId,
     p_quantity: quantity,
   });
-
   if (error) {
     throw new Error(error.message || "Не удалось добавить товар");
   }
-
   return data as StaffOrderMutationResult;
 }
 
-/**
- * Changes an order item's quantity via
- * public.staff_update_order_item_quantity(), adjusting the reservation by
- * exactly the difference (increase requires enough available stock;
- * decrease releases the difference). Order must be 'new'.
- */
 export async function updateStaffOrderItemQuantity(
   orderItemId: string,
   quantity: number,
@@ -319,28 +433,175 @@ export async function updateStaffOrderItemQuantity(
     p_order_item_id: orderItemId,
     p_quantity: quantity,
   });
-
   if (error) {
     throw new Error(error.message || "Не удалось изменить количество");
   }
-
   return data as StaffOrderMutationResult;
 }
 
-/**
- * Removes an order item via public.staff_remove_order_item(), fully
- * releasing its reservation. Order must be 'new'.
- */
 export async function removeStaffOrderItem(
   orderItemId: string,
 ): Promise<StaffOrderMutationResult> {
   const { data, error } = await supabase.rpc("staff_remove_order_item", {
     p_order_item_id: orderItemId,
   });
-
   if (error) {
     throw new Error(error.message || "Не удалось удалить позицию");
   }
-
   return data as StaffOrderMutationResult;
 }
+
+export async function changeStaffOrderStatus(
+  orderId: string,
+  newStatus: OrderStatus,
+  note?: string | null,
+): Promise<StaffOrderMutationResult> {
+  const { data, error } = await supabase.rpc("staff_change_order_status", {
+    p_order_id: orderId,
+    p_new_status: newStatus,
+    p_note: note ?? null,
+  });
+  if (error) {
+    throw new Error(error.message || "Не удалось изменить статус заказа");
+  }
+  return data as StaffOrderMutationResult;
+}
+
+export async function cancelStaffOrder(
+  orderId: string,
+  note: string,
+): Promise<StaffOrderMutationResult> {
+  const { data, error } = await supabase.rpc("staff_cancel_order", {
+    p_order_id: orderId,
+    p_note: note,
+  });
+  if (error) {
+    throw new Error(error.message || "Не удалось отменить заказ");
+  }
+  return data as StaffOrderMutationResult;
+}
+
+export async function addStaffOrderNote(
+  orderId: string,
+  body: string,
+): Promise<StaffOrderInternalNoteItem> {
+  const { data, error } = await supabase.rpc("staff_add_order_note", {
+    p_order_id: orderId,
+    p_body: body,
+  });
+  if (error) {
+    throw new Error(error.message || "Не удалось добавить заметку");
+  }
+  const row = data as {
+    id: string;
+    order_id: string;
+    body: string;
+    created_by: string;
+    created_at: string;
+    updated_at: string | null;
+  };
+  return {
+    id: row.id,
+    order_id: row.order_id,
+    body: row.body,
+    created_by: row.created_by,
+    created_by_name: null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export async function assignStaffOrderManager(
+  orderId: string,
+  managerId: string | null,
+): Promise<StaffOrderMutationResult> {
+  const { data, error } = await supabase.rpc("staff_assign_order_manager", {
+    p_order_id: orderId,
+    p_manager_id: managerId,
+  });
+  if (error) {
+    throw new Error(error.message || "Не удалось назначить менеджера");
+  }
+  return data as StaffOrderMutationResult;
+}
+
+export async function updateStaffOrderDeadlines(
+  orderId: string,
+  paymentDueAt: string | null,
+  reservationExpiresAt: string | null,
+): Promise<StaffOrderMutationResult> {
+  const { data, error } = await supabase.rpc("staff_update_order_deadlines", {
+    p_order_id: orderId,
+    p_payment_due_at: paymentDueAt,
+    p_reservation_expires_at: reservationExpiresAt,
+  });
+  if (error) {
+    throw new Error(error.message || "Не удалось обновить сроки");
+  }
+  return data as StaffOrderMutationResult;
+}
+
+export function getAllowedStatusTransitions(from: OrderStatus): OrderStatus[] {
+  const map: Record<OrderStatus, OrderStatus[]> = {
+    new: ["awaiting_payment"],
+    awaiting_payment: ["paid", "new"],
+    paid: ["picking"],
+    picking: ["ready_for_shipment", "paid"],
+    ready_for_shipment: ["shipped", "picking"],
+    shipped: ["completed"],
+    completed: [],
+    cancelled: [],
+  };
+  return map[from];
+}
+
+export function getStatusTransitionLabel(from: OrderStatus, to: OrderStatus): string {
+  const labels: Record<string, string> = {
+    "new->awaiting_payment": "На оплату",
+    "awaiting_payment->paid": "Оплата получена",
+    "awaiting_payment->new": "Вернуть в новые",
+    "paid->picking": "В сборку",
+    "picking->ready_for_shipment": "Готов к отгрузке",
+    "picking->paid": "Вернуть в оплаченные",
+    "ready_for_shipment->shipped": "Отгрузить",
+    "ready_for_shipment->picking": "Вернуть в сборку",
+    "shipped->completed": "Завершить",
+  };
+  return labels[`${from}->${to}`] ?? `→ ${ORDER_STATUS_LABELS[to]}`;
+}
+
+export function canStaffCancelOrder(
+  status: OrderStatus,
+  role: string | null | undefined,
+): boolean {
+  if (role !== "manager" && role !== "admin") {
+    return false;
+  }
+  if (status === "new" || status === "awaiting_payment") {
+    return true;
+  }
+  if (status === "paid" || status === "picking" || status === "ready_for_shipment") {
+    return role === "admin";
+  }
+  return false;
+}
+
+export function isDeadlineOverdue(iso: string | null, now = new Date()): boolean {
+  if (!iso) {
+    return false;
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+  return date.getTime() < now.getTime();
+}
+
+export const STAFF_STATUS_FILTER_OPTIONS: { value: OrderStatus | "all"; label: string }[] = [
+  { value: "all", label: "Все статусы" },
+  ...ORDER_WORKFLOW_STATUSES.map((status) => ({
+    value: status,
+    label: ORDER_STATUS_LABELS[status],
+  })),
+  { value: "cancelled", label: ORDER_STATUS_LABELS.cancelled },
+];

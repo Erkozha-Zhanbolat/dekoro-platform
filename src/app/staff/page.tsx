@@ -13,9 +13,13 @@ import type { StaffOrderListItem, StaffOrderStats } from "@/lib/staff/orders";
 const RECENT_ORDERS_LIMIT = 8;
 
 const STAT_CARDS: { key: keyof StaffOrderStats; label: string }[] = [
-  { key: "total", label: "Всего заказов" },
+  { key: "total", label: "Всего" },
   { key: "new", label: "Новые" },
-  { key: "processing", label: "В обработке" },
+  { key: "awaiting_payment", label: "Ожидают оплаты" },
+  { key: "paid", label: "Оплачены" },
+  { key: "picking", label: "Сборка" },
+  { key: "ready_for_shipment", label: "К отгрузке" },
+  { key: "shipped", label: "Отгружены" },
   { key: "completed", label: "Завершённые" },
   { key: "cancelled", label: "Отменённые" },
 ];

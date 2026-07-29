@@ -160,14 +160,51 @@ export interface Favorite {
   created_at: string;
 }
 
-export type OrderStatus = "new" | "processing" | "completed" | "cancelled";
+/**
+ * Order workflow statuses (supabase/migrations/012_staff_order_workflow.sql).
+ * Legacy `processing` is remapped to `awaiting_payment` by migration 012.
+ */
+export type OrderStatus =
+  | "new"
+  | "awaiting_payment"
+  | "paid"
+  | "picking"
+  | "ready_for_shipment"
+  | "shipped"
+  | "completed"
+  | "cancelled";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   new: "Новый",
-  processing: "В обработке",
+  awaiting_payment: "Ожидает оплаты",
+  paid: "Оплачен",
+  picking: "Сборка",
+  ready_for_shipment: "Готов к отгрузке",
+  shipped: "Отгружен",
   completed: "Завершён",
   cancelled: "Отменён",
 };
+
+/** Statuses in forward workflow order (excluding cancelled). */
+export const ORDER_WORKFLOW_STATUSES: readonly OrderStatus[] = [
+  "new",
+  "awaiting_payment",
+  "paid",
+  "picking",
+  "ready_for_shipment",
+  "shipped",
+  "completed",
+];
+
+/** Staff may edit line items only while the order is still pre-payment. */
+export const ORDER_ITEM_EDITABLE_STATUSES: readonly OrderStatus[] = [
+  "new",
+  "awaiting_payment",
+];
+
+export function canEditOrderItems(status: OrderStatus): boolean {
+  return ORDER_ITEM_EDITABLE_STATUSES.includes(status);
+}
 
 export interface Order {
   id: string;
@@ -187,8 +224,33 @@ export interface Order {
   contact_email: string | null;
   delivery_address: string | null;
   delivery_comment: string | null;
+  // Added by supabase/migrations/012_staff_order_workflow.sql.
+  assigned_manager_id: string | null;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Row from public.order_status_history (012) — read via staff RPC only. */
+export interface OrderStatusHistoryEntry {
+  id: string;
+  order_id: string;
+  from_status: OrderStatus | null;
+  to_status: OrderStatus;
+  changed_by: string;
+  note: string | null;
+  created_at: string;
+}
+
+/** Row from public.order_internal_notes (012) — read via staff RPC only. */
+export interface OrderInternalNote {
+  id: string;
+  order_id: string;
+  body: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string | null;
 }
 
 export interface OrderItem {
@@ -336,6 +398,9 @@ export type StaffOrderMutationResult = {
   contact_email: string | null;
   delivery_address: string | null;
   delivery_comment: string | null;
+  assigned_manager_id: string | null;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   created_at: string;
   updated_at: string;
 };

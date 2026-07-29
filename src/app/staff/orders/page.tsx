@@ -5,20 +5,14 @@ import { useEffect, useState } from "react";
 import { formatPrice } from "@/lib/formatPrice";
 import { ORDER_STATUS_LABELS } from "@/types/database";
 import type { OrderStatus } from "@/types/database";
-import { getStaffOrders } from "@/lib/staff/orders";
+import { getStaffOrders, STAFF_STATUS_FILTER_OPTIONS } from "@/lib/staff/orders";
 import type { StaffOrderListItem } from "@/lib/staff/orders";
 import { useProfile } from "@/context/ProfileContext";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
-const STATUS_FILTERS: { value: OrderStatus | "all"; label: string }[] = [
-  { value: "all", label: "Все статусы" },
-  { value: "new", label: ORDER_STATUS_LABELS.new },
-  { value: "processing", label: ORDER_STATUS_LABELS.processing },
-  { value: "completed", label: ORDER_STATUS_LABELS.completed },
-  { value: "cancelled", label: ORDER_STATUS_LABELS.cancelled },
-];
+const STATUS_FILTERS = STAFF_STATUS_FILTER_OPTIONS;
 
 const ORDERS_LIST_LIMIT = 100;
 const SEARCH_DEBOUNCE_MS = 300;
