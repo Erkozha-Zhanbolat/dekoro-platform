@@ -42,6 +42,104 @@ export interface Company {
 
 export type CustomerType = "individual" | "company";
 
+/**
+ * Universal customer entity (supabase/migrations/013_customers_foundation.sql).
+ * Covers registered profiles, companies, and staff-created walk-in clients.
+ */
+export type CustomerSource =
+  | "website"
+  | "staff"
+  | "phone"
+  | "whatsapp"
+  | "instagram"
+  | "referral"
+  | "other";
+
+export const CUSTOMER_TYPE_LABELS: Record<CustomerType, string> = {
+  individual: "Физлицо",
+  company: "Компания",
+};
+
+export const CUSTOMER_SOURCE_LABELS: Record<CustomerSource, string> = {
+  website: "Сайт",
+  staff: "Менеджер",
+  phone: "Телефон",
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  referral: "Рекомендация",
+  other: "Другое",
+};
+
+export const CUSTOMER_SOURCES: readonly CustomerSource[] = [
+  "website",
+  "staff",
+  "phone",
+  "whatsapp",
+  "instagram",
+  "referral",
+  "other",
+];
+
+export interface Customer {
+  id: string;
+  customer_type: CustomerType;
+  profile_id: string | null;
+  company_id: string | null;
+  display_name: string;
+  legal_name: string | null;
+  phone: string | null;
+  email: string | null;
+  iin_bin: string | null;
+  contact_person: string | null;
+  address: string | null;
+  city: string | null;
+  source: CustomerSource | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Row returned by public.staff_search_customers(p_query, p_limit). */
+export type StaffCustomerSearchResult = {
+  id: string;
+  customer_type: CustomerType;
+  display_name: string;
+  legal_name: string | null;
+  phone: string | null;
+  email: string | null;
+  city: string | null;
+  source: CustomerSource | null;
+  profile_id: string | null;
+  company_id: string | null;
+  orders_count: number;
+  last_order_at: string | null;
+};
+
+/** Row returned by public.staff_get_customer(p_customer_id). */
+export type StaffCustomerDetails = {
+  id: string;
+  customer_type: CustomerType;
+  profile_id: string | null;
+  company_id: string | null;
+  display_name: string;
+  legal_name: string | null;
+  phone: string | null;
+  email: string | null;
+  iin_bin: string | null;
+  contact_person: string | null;
+  address: string | null;
+  city: string | null;
+  source: CustomerSource | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  is_registered: boolean;
+  orders_count: number;
+  last_order_at: string | null;
+};
+
 export interface Profile {
   id: string;
   company_id: string | null;
@@ -209,9 +307,13 @@ export function canEditOrderItems(status: OrderStatus): boolean {
 export interface Order {
   id: string;
   order_number: string;
-  user_id: string;
-  profile_id: string;
+  /** Nullable for unregistered staff-created customers (013). */
+  user_id: string | null;
+  /** Nullable for unregistered staff-created customers (013). */
+  profile_id: string | null;
   company_id: string | null;
+  /** Universal customer — required after 013 backfill. */
+  customer_id: string;
   status: OrderStatus;
   subtotal: number;
   discount: number;
@@ -367,7 +469,7 @@ export type StaffProductSearchResult = {
   available_quantity: number;
 };
 
-/** Row returned by public.staff_create_order(p_client_profile_id). */
+/** Row returned by public.staff_create_order / staff_create_order_for_customer. */
 export type StaffCreateOrderResult = {
   id: string;
   order_number: string;
@@ -384,9 +486,10 @@ export type StaffCreateOrderResult = {
 export type StaffOrderMutationResult = {
   id: string;
   order_number: string;
-  user_id: string;
-  profile_id: string;
+  user_id: string | null;
+  profile_id: string | null;
   company_id: string | null;
+  customer_id: string;
   status: OrderStatus;
   subtotal: number;
   discount: number;

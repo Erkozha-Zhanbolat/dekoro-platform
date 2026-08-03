@@ -409,6 +409,24 @@ export async function createStaffOrder(
   return result;
 }
 
+export async function createStaffOrderForCustomer(
+  customerId: string,
+): Promise<StaffCreateOrderResult> {
+  const { data, error } = await supabase.rpc("staff_create_order_for_customer", {
+    p_customer_id: customerId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось создать заказ");
+  }
+
+  const [result] = (data as StaffCreateOrderResult[] | null) ?? [];
+  if (!result) {
+    throw new Error("Не удалось создать заказ");
+  }
+  return result;
+}
+
 export async function addStaffOrderItem(
   orderId: string,
   productId: string,

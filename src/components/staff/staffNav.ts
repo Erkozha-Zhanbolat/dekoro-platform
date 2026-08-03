@@ -29,9 +29,9 @@ const STAFF_NAV_ITEMS: readonly StaffNavItem[] = [
     roles: ["manager", "accountant", "warehouse", "admin"],
   },
   {
-    href: "/staff/clients",
+    href: "/staff/customers",
     label: "Клиенты",
-    enabled: false,
+    enabled: true,
     roles: ["manager", "accountant", "admin"],
   },
   {
