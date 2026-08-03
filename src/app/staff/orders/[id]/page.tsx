@@ -24,10 +24,21 @@ import type {
   StaffOrderDetail,
   StaffOrderDetailItem,
 } from "@/lib/staff/orders";
+import {
+  findOrderDocument,
+  generateStaffDeliveryNote,
+  generateStaffInvoice,
+  listStaffOrderDocuments,
+} from "@/lib/staff/documents";
+import type { StaffOrderDocumentListItem } from "@/lib/staff/documents";
 import { formatPrice } from "@/lib/formatPrice";
 import {
   canEditOrderItems,
+  DOCUMENT_TAX_MODE_LABELS,
+  ORDER_DOCUMENT_STATUS_LABELS,
   ORDER_STATUS_LABELS,
+  type DocumentTaxMode,
+  type OrderDocumentType,
   type OrderStatus,
 } from "@/types/database";
 import { useProfile } from "@/context/ProfileContext";
@@ -95,6 +106,25 @@ export default function StaffOrderDetailPage() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
 
+  const [documents, setDocuments] = useState<StaffOrderDocumentListItem[]>([]);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
+  const [deliveryNoteBusy, setDeliveryNoteBusy] = useState(false);
+  const [taxModalDocType, setTaxModalDocType] = useState<OrderDocumentType | null>(null);
+  const [taxModeDraft, setTaxModeDraft] = useState<DocumentTaxMode>("without_vat");
+
+  async function refetchDocuments() {
+    try {
+      const docs = await listStaffOrderDocuments(orderId);
+      setDocuments(docs);
+      setDocumentsError(null);
+    } catch (error) {
+      setDocumentsError(
+        error instanceof Error ? error.message : "Не удалось загрузить документы",
+      );
+    }
+  }
+
   async function refetchOrder() {
     try {
       const result = await getStaffOrderById(orderId);
@@ -104,6 +134,7 @@ export default function StaffOrderDetailPage() {
         setManagerDraft(result.assigned_manager_id ?? "");
         setPaymentDueDraft(toDatetimeLocalValue(result.payment_due_at));
         setReservationExpiresDraft(toDatetimeLocalValue(result.reservation_expires_at));
+        await refetchDocuments();
       }
       setLoadError(null);
     } catch (error) {
@@ -121,14 +152,16 @@ export default function StaffOrderDetailPage() {
     Promise.all([
       getStaffOrderById(orderId),
       listAssignableManagers().catch(() => [] as StaffManagerOption[]),
+      listStaffOrderDocuments(orderId).catch(() => [] as StaffOrderDocumentListItem[]),
     ])
-      .then(([result, managerOptions]) => {
+      .then(([result, managerOptions, docs]) => {
         if (ignore) {
           return;
         }
         setOrder(result);
         setNotFound(result === null);
         setManagers(managerOptions);
+        setDocuments(docs);
         if (result) {
           setManagerDraft(result.assigned_manager_id ?? "");
           setPaymentDueDraft(toDatetimeLocalValue(result.payment_due_at));
@@ -161,6 +194,19 @@ export default function StaffOrderDetailPage() {
   const transitions = order ? getAllowedStatusTransitions(order.status) : [];
   const fieldsEditable =
     canManageWorkflow && order != null && order.status !== "completed" && order.status !== "cancelled";
+  const invoiceDoc = findOrderDocument(documents, "invoice");
+  const deliveryNoteDoc = findOrderDocument(documents, "delivery_note");
+  const canGenerateInvoice =
+    canManageWorkflow && order != null && order.status !== "cancelled" && order.items.length > 0;
+  const deliveryNoteAllowedStatuses: OrderStatus[] = [
+    "paid",
+    "picking",
+    "ready_for_shipment",
+    "shipped",
+    "completed",
+  ];
+  const canGenerateDeliveryNote =
+    canGenerateInvoice && order != null && deliveryNoteAllowedStatuses.includes(order.status);
 
   const paymentOverdue =
     order != null &&
@@ -298,6 +344,60 @@ export default function StaffOrderDetailPage() {
       setNoteError(error instanceof Error ? error.message : "Не удалось добавить заметку");
     } finally {
       setNoteSaving(false);
+    }
+  }
+
+  function openTaxModal(docType: OrderDocumentType) {
+    if (!order || !canManageWorkflow) {
+      return;
+    }
+    setDocumentsError(null);
+    setTaxModeDraft("without_vat");
+    setTaxModalDocType(docType);
+  }
+
+  async function confirmGenerateDocument() {
+    if (!order || !taxModalDocType) {
+      return;
+    }
+
+    const docType = taxModalDocType;
+    const taxMode = taxModeDraft;
+    setTaxModalDocType(null);
+
+    if (docType === "invoice") {
+      if (invoiceBusy) {
+        return;
+      }
+      setInvoiceBusy(true);
+      setDocumentsError(null);
+      try {
+        await generateStaffInvoice(order.id, taxMode);
+        await refetchDocuments();
+      } catch (error) {
+        setDocumentsError(
+          error instanceof Error ? error.message : "Не удалось сформировать счёт",
+        );
+      } finally {
+        setInvoiceBusy(false);
+      }
+      return;
+    }
+
+    if (deliveryNoteBusy) {
+      return;
+    }
+    setDeliveryNoteBusy(true);
+    setDocumentsError(null);
+    try {
+      await generateStaffDeliveryNote(order.id, taxMode);
+      await refetchDocuments();
+    } catch (error) {
+      setDocumentsError(
+        error instanceof Error ? error.message : "Не удалось сформировать накладную",
+      );
+    } finally {
+      setDeliveryNoteBusy(false);
     }
   }
 
@@ -586,6 +686,140 @@ export default function StaffOrderDetailPage() {
         </section>
 
         <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-neutral-800">Документы</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Счёт и накладная — snapshot metadata. PDF формируется из документа, не из live
+            заказа.
+          </p>
+
+          {documentsError && (
+            <p className="mt-3 text-sm text-red-600" role="alert">
+              {documentsError}
+            </p>
+          )}
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-md border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Счёт</p>
+              {invoiceDoc ? (
+                <div className="mt-2 space-y-2 text-sm text-neutral-700">
+                  <p className="font-medium text-neutral-800">{invoiceDoc.number}</p>
+                  <p>
+                    {ORDER_DOCUMENT_STATUS_LABELS[invoiceDoc.status]} ·{" "}
+                    {new Date(invoiceDoc.generated_at).toLocaleString("ru-RU")}
+                  </p>
+                  {invoiceDoc.generated_by_name && (
+                    <p className="text-neutral-500">{invoiceDoc.generated_by_name}</p>
+                  )}
+                  {invoiceDoc.printed_at && (
+                    <p className="text-xs text-neutral-400">
+                      Печать: {new Date(invoiceDoc.printed_at).toLocaleString("ru-RU")}
+                    </p>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Link
+                      href={`/staff/orders/${order.id}/documents/${invoiceDoc.id}`}
+                      className={`inline-flex rounded-md border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
+                    >
+                      Просмотр
+                    </Link>
+                    <Link
+                      href={`/staff/orders/${order.id}/documents/${invoiceDoc.id}/print`}
+                      className={`inline-flex rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+                    >
+                      Печать
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <p className="text-sm text-neutral-500">Счёт ещё не создан</p>
+                  {canGenerateInvoice && (
+                    <button
+                      type="button"
+                      onClick={() => openTaxModal("invoice")}
+                      disabled={invoiceBusy}
+                      className={`mt-3 rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:bg-neutral-300 ${focusRing}`}
+                    >
+                      {invoiceBusy ? "Создание..." : "Создать счёт"}
+                    </button>
+                  )}
+                  {canManageWorkflow && order.items.length === 0 && (
+                    <p className="mt-2 text-xs text-neutral-400">
+                      Добавьте товары в заказ, чтобы сформировать счёт
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-md border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Накладная
+              </p>
+              {deliveryNoteDoc ? (
+                <div className="mt-2 space-y-2 text-sm text-neutral-700">
+                  <p className="font-medium text-neutral-800">{deliveryNoteDoc.number}</p>
+                  <p>
+                    {ORDER_DOCUMENT_STATUS_LABELS[deliveryNoteDoc.status]} ·{" "}
+                    {new Date(deliveryNoteDoc.generated_at).toLocaleString("ru-RU")}
+                  </p>
+                  {deliveryNoteDoc.generated_by_name && (
+                    <p className="text-neutral-500">{deliveryNoteDoc.generated_by_name}</p>
+                  )}
+                  {deliveryNoteDoc.printed_at && (
+                    <p className="text-xs text-neutral-400">
+                      Печать: {new Date(deliveryNoteDoc.printed_at).toLocaleString("ru-RU")}
+                    </p>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Link
+                      href={`/staff/orders/${order.id}/documents/${deliveryNoteDoc.id}`}
+                      className={`inline-flex rounded-md border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
+                    >
+                      Просмотр
+                    </Link>
+                    <Link
+                      href={`/staff/orders/${order.id}/documents/${deliveryNoteDoc.id}/print`}
+                      className={`inline-flex rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+                    >
+                      Печать
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <p className="text-sm text-neutral-500">Накладная ещё не создана</p>
+                  {canGenerateDeliveryNote && (
+                    <button
+                      type="button"
+                      onClick={() => openTaxModal("delivery_note")}
+                      disabled={deliveryNoteBusy}
+                      className={`mt-3 rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:bg-neutral-300 ${focusRing}`}
+                    >
+                      {deliveryNoteBusy ? "Создание..." : "Создать накладную"}
+                    </button>
+                  )}
+                  {canManageWorkflow && order.items.length === 0 && (
+                    <p className="mt-2 text-xs text-neutral-400">
+                      Добавьте товары в заказ, чтобы сформировать накладную
+                    </p>
+                  )}
+                  {canManageWorkflow &&
+                    order.items.length > 0 &&
+                    !canGenerateDeliveryNote &&
+                    order.status !== "cancelled" && (
+                      <p className="mt-2 text-xs text-neutral-400">
+                        Накладная доступна после оплаты (paid и далее)
+                      </p>
+                    )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-neutral-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-neutral-800">Состав заказа</h2>
             {canManageItems && (
@@ -744,6 +978,63 @@ export default function StaffOrderDetailPage() {
             void refetchOrder();
           }}
         />
+      )}
+
+      {taxModalDocType && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tax-mode-dialog-title"
+          onClick={() => setTaxModalDocType(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-5 shadow-lg"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="tax-mode-dialog-title" className="text-lg font-semibold text-neutral-800">
+              {taxModalDocType === "invoice" ? "Создать счёт" : "Создать накладную"}
+            </h2>
+            <p className="mt-1 text-sm text-neutral-500">Выберите налоговый режим</p>
+
+            <fieldset className="mt-4 space-y-2">
+              <legend className="sr-only">Налоговый режим</legend>
+              {(Object.keys(DOCUMENT_TAX_MODE_LABELS) as DocumentTaxMode[]).map((mode) => (
+                <label
+                  key={mode}
+                  className="flex cursor-pointer items-center gap-3 rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-800 hover:border-[#0F766E]"
+                >
+                  <input
+                    type="radio"
+                    name="document-tax-mode"
+                    value={mode}
+                    checked={taxModeDraft === mode}
+                    onChange={() => setTaxModeDraft(mode)}
+                    className="accent-[#0F766E]"
+                  />
+                  {DOCUMENT_TAX_MODE_LABELS[mode]}
+                </label>
+              ))}
+            </fieldset>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTaxModalDocType(null)}
+                className={`rounded-md border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 ${focusRing}`}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmGenerateDocument()}
+                className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+              >
+                Создать
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

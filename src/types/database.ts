@@ -507,3 +507,122 @@ export type StaffOrderMutationResult = {
   created_at: string;
   updated_at: string;
 };
+
+// ============================================================
+// Staff Platform — order documents (supabase/migrations/014_documents.sql)
+// ============================================================
+
+export type OrderDocumentType = "invoice" | "delivery_note";
+
+export type OrderDocumentStatus = "generated" | "cancelled";
+
+/** Tax mode chosen when generating invoice / delivery note (014). */
+export type DocumentTaxMode = "without_vat" | "with_vat";
+
+export const DOCUMENT_TAX_MODE_LABELS: Record<DocumentTaxMode, string> = {
+  without_vat: "Без НДС",
+  with_vat: "С НДС",
+};
+
+export const ORDER_DOCUMENT_TYPE_LABELS: Record<OrderDocumentType, string> = {
+  invoice: "Счёт",
+  delivery_note: "Накладная",
+};
+
+export const ORDER_DOCUMENT_STATUS_LABELS: Record<OrderDocumentStatus, string> = {
+  generated: "Сформирован",
+  cancelled: "Отменён",
+};
+
+/** Singleton public.organization_settings (014). */
+export type OrganizationSettings = {
+  id: string;
+  singleton_key: "default";
+  legal_name: string | null;
+  bin: string | null;
+  address: string | null;
+  city: string | null;
+  phone: string | null;
+  email: string | null;
+  bank_name: string | null;
+  bank_bik: string | null;
+  bank_iik: string | null;
+  bank_kbe: string | null;
+  director_name: string | null;
+  warehouse_name: string | null;
+  warehouse_code: string | null;
+  default_tax_mode: DocumentTaxMode;
+  /** Percent, e.g. 12.00 for KZ. Null until admin configures. */
+  vat_rate: number | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Row from public.order_documents (014 + 015 print audit). */
+export type OrderDocument = {
+  id: string;
+  order_id: string;
+  document_type: OrderDocumentType;
+  number: string;
+  status: OrderDocumentStatus;
+  file_path: string | null;
+  generated_by: string;
+  generated_at: string;
+  printed_at: string | null;
+  printed_by: string | null;
+  created_at: string;
+  updated_at: string;
+  metadata: OrderDocumentMetadata;
+};
+
+/** Snapshot stored in order_documents.metadata for PDF (incl. KZ form 3-2). */
+export type OrderDocumentMetadata = {
+  schema_version: number;
+  document_type: OrderDocumentType;
+  document_number: string;
+  form_hint: string;
+  generated_at: string;
+  order: Record<string, unknown>;
+  supplier: Record<string, unknown>;
+  buyer: Record<string, unknown>;
+  items: OrderDocumentMetadataItem[];
+  totals: Record<string, unknown>;
+  basis: Record<string, unknown>;
+  form_3_2: Record<string, unknown>;
+};
+
+export type OrderDocumentMetadataItem = {
+  line_no: number;
+  order_item_id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string | null;
+  unit: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+};
+
+/** Row returned by public.staff_list_order_documents(p_order_id). */
+export type StaffOrderDocumentListItem = {
+  id: string;
+  order_id: string;
+  document_type: OrderDocumentType;
+  number: string;
+  status: OrderDocumentStatus;
+  file_path: string | null;
+  generated_by: string;
+  generated_by_name: string | null;
+  generated_at: string;
+  printed_at: string | null;
+  printed_by: string | null;
+  printed_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Row returned by public.staff_get_document(p_order_id, p_document_id). */
+export type StaffOrderDocumentDetails = StaffOrderDocumentListItem & {
+  metadata: OrderDocumentMetadata;
+};
