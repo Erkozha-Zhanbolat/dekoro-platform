@@ -660,3 +660,153 @@ export type StaffOrderDocumentListItem = {
 export type StaffOrderDocumentDetails = StaffOrderDocumentListItem & {
   metadata: OrderDocumentMetadata;
 };
+
+// ============================================================
+// Staff Platform — warehouse operations (017)
+// ============================================================
+
+export type PickingTaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+
+export const PICKING_TASK_STATUS_LABELS: Record<PickingTaskStatus, string> = {
+  pending: "Ожидает",
+  in_progress: "В сборке",
+  completed: "Собрано",
+  cancelled: "Отменена",
+};
+
+/** Queue statuses shown on /staff/warehouse. */
+export const WAREHOUSE_QUEUE_STATUSES: readonly OrderStatus[] = [
+  "paid",
+  "picking",
+  "ready_for_shipment",
+];
+
+export type WarehouseQueueStatus = (typeof WAREHOUSE_QUEUE_STATUSES)[number];
+
+/** Row from public.warehouse_list_orders(...). */
+export type WarehouseOrderListItem = {
+  order_id: string;
+  order_number: string;
+  customer_display_name: string;
+  delivery_type: DeliveryType;
+  status: WarehouseQueueStatus;
+  total_item_count: number;
+  completed_item_count: number;
+  picking_task_status: PickingTaskStatus | null;
+  assigned_to: string | null;
+  assigned_to_name: string | null;
+  created_at: string;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
+  total: number;
+};
+
+export type WarehousePickingItem = {
+  id: string;
+  picking_task_id: string;
+  order_item_id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string | null;
+  required_quantity: number;
+  picked_quantity: number;
+  is_completed: boolean;
+  completed_by: string | null;
+  completed_at: string | null;
+};
+
+export type WarehouseOrderPickingDetails = {
+  order: {
+    id: string;
+    order_number: string;
+    status: OrderStatus;
+    total: number;
+    delivery_type: DeliveryType;
+    contact_name: string;
+    contact_phone: string;
+    contact_email: string | null;
+    delivery_address: string | null;
+    delivery_comment: string | null;
+    comment: string | null;
+    payment_due_at: string | null;
+    reservation_expires_at: string | null;
+    created_at: string;
+    updated_at: string;
+    assigned_manager_id: string | null;
+    customer_id: string;
+  };
+  customer: {
+    id: string;
+    display_name: string;
+    phone: string | null;
+    email: string | null;
+    customer_type: CustomerType;
+  } | null;
+  manager: {
+    id: string;
+    full_name: string;
+  } | null;
+  picking_task: {
+    id: string;
+    order_id: string;
+    warehouse_id: string;
+    status: PickingTaskStatus;
+    assigned_to: string | null;
+    assigned_to_name: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    created_at: string;
+    updated_at: string;
+  } | null;
+  picking_items: WarehousePickingItem[];
+  order_items: {
+    id: string;
+    product_id: string;
+    product_name: string;
+    product_sku: string | null;
+    quantity: number;
+  }[];
+  delivery_note: {
+    id: string;
+    number: string;
+    status: OrderDocumentStatus;
+    generated_at: string;
+    printed_at: string | null;
+  } | null;
+  progress: {
+    total: number;
+    completed: number;
+  };
+};
+
+export function canAccessWarehouseOps(role: UserRole | null | undefined): boolean {
+  return role === "warehouse" || role === "manager" || role === "admin";
+}
+
+export type WarehouseActivityEventType =
+  | "picking_started"
+  | "picking_item_completed"
+  | "picking_item_reopened"
+  | "picking_completed"
+  | "order_shipped";
+
+export const WAREHOUSE_ACTIVITY_EVENT_LABELS: Record<WarehouseActivityEventType, string> = {
+  picking_started: "Начал сборку",
+  picking_item_completed: "Собрал позицию",
+  picking_item_reopened: "Вернул позицию в несобранные",
+  picking_completed: "Завершил сборку",
+  order_shipped: "Отгрузил заказ",
+};
+
+/** Row from public.warehouse_list_order_activity(p_order_id). */
+export type WarehouseOrderActivityItem = {
+  id: string;
+  order_id: string;
+  picking_task_id: string | null;
+  event_type: WarehouseActivityEventType;
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+};

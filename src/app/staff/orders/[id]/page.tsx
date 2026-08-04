@@ -33,6 +33,7 @@ import {
 import type { StaffOrderDocumentListItem } from "@/lib/staff/documents";
 import { formatPrice } from "@/lib/formatPrice";
 import {
+  canAccessWarehouseOps,
   canEditOrderItems,
   DOCUMENT_TAX_MODE_LABELS,
   ORDER_DOCUMENT_STATUS_LABELS,
@@ -207,6 +208,12 @@ export default function StaffOrderDetailPage() {
   ];
   const canGenerateDeliveryNote =
     canGenerateInvoice && order != null && deliveryNoteAllowedStatuses.includes(order.status);
+  const showWarehouseLink =
+    canAccessWarehouseOps(profile?.role) &&
+    order != null &&
+    (order.status === "paid" ||
+      order.status === "picking" ||
+      order.status === "ready_for_shipment");
 
   const paymentOverdue =
     order != null &&
@@ -453,6 +460,15 @@ export default function StaffOrderDetailPage() {
       <p className="mt-1 text-sm text-neutral-500">
         от {new Date(order.created_at).toLocaleString("ru-RU")}
       </p>
+
+      {showWarehouseLink && (
+        <Link
+          href={`/staff/warehouse/${order.id}`}
+          className={`mt-4 inline-flex rounded-md border border-[#0F766E]/30 bg-[#0F766E]/5 px-4 py-2 text-sm font-medium text-[#0F766E] transition-colors hover:bg-[#0F766E]/10 ${focusRing}`}
+        >
+          Открыть карточку сборки →
+        </Link>
+      )}
 
       {(paymentOverdue || reservationOverdue) && (
         <div className="mt-4 flex flex-wrap gap-2">
