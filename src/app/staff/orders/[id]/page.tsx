@@ -31,11 +31,11 @@ import {
   listStaffOrderDocuments,
 } from "@/lib/staff/documents";
 import type { StaffOrderDocumentListItem } from "@/lib/staff/documents";
+import { getOrganizationSettings } from "@/lib/staff/organization";
 import { formatPrice } from "@/lib/formatPrice";
 import {
   canAccessWarehouseOps,
   canEditOrderItems,
-  DOCUMENT_TAX_MODE_LABELS,
   ORDER_DOCUMENT_STATUS_LABELS,
   ORDER_STATUS_LABELS,
   type DocumentTaxMode,
@@ -113,6 +113,10 @@ export default function StaffOrderDetailPage() {
   const [deliveryNoteBusy, setDeliveryNoteBusy] = useState(false);
   const [taxModalDocType, setTaxModalDocType] = useState<OrderDocumentType | null>(null);
   const [taxModeDraft, setTaxModeDraft] = useState<DocumentTaxMode>("without_vat");
+  const [contractNumberDraft, setContractNumberDraft] = useState("");
+  const [contractDateDraft, setContractDateDraft] = useState("");
+  const [orgVatRate, setOrgVatRate] = useState<number | null>(null);
+  const [taxModalError, setTaxModalError] = useState<string | null>(null);
 
   async function refetchDocuments() {
     try {
@@ -359,8 +363,24 @@ export default function StaffOrderDetailPage() {
       return;
     }
     setDocumentsError(null);
+    setTaxModalError(null);
     setTaxModeDraft("without_vat");
+    setContractNumberDraft("");
+    setContractDateDraft("");
     setTaxModalDocType(docType);
+
+    void getOrganizationSettings()
+      .then((settings) => {
+        setOrgVatRate(settings.vat_rate);
+        setTaxModeDraft(settings.default_tax_mode);
+      })
+      .catch((error: unknown) => {
+        setTaxModalError(
+          error instanceof Error
+            ? error.message
+            : "Не удалось загрузить ставку НДС из настроек",
+        );
+      });
   }
 
   async function confirmGenerateDocument() {
@@ -370,6 +390,8 @@ export default function StaffOrderDetailPage() {
 
     const docType = taxModalDocType;
     const taxMode = taxModeDraft;
+    const contractNumber = contractNumberDraft.trim() || null;
+    const contractDate = contractDateDraft.trim() || null;
     setTaxModalDocType(null);
 
     if (docType === "invoice") {
@@ -379,7 +401,10 @@ export default function StaffOrderDetailPage() {
       setInvoiceBusy(true);
       setDocumentsError(null);
       try {
-        await generateStaffInvoice(order.id, taxMode);
+        await generateStaffInvoice(order.id, taxMode, {
+          contractNumber,
+          contractDate,
+        });
         await refetchDocuments();
       } catch (error) {
         setDocumentsError(
@@ -996,7 +1021,7 @@ export default function StaffOrderDetailPage() {
         />
       )}
 
-      {taxModalDocType && (
+      {taxModalDocType && order && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           role="dialog"
@@ -1005,33 +1030,149 @@ export default function StaffOrderDetailPage() {
           onClick={() => setTaxModalDocType(null)}
         >
           <div
-            className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-5 shadow-lg"
+            className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-5 shadow-lg"
             onClick={(event) => event.stopPropagation()}
           >
             <h2 id="tax-mode-dialog-title" className="text-lg font-semibold text-neutral-800">
               {taxModalDocType === "invoice" ? "Создать счёт" : "Создать накладную"}
             </h2>
-            <p className="mt-1 text-sm text-neutral-500">Выберите налоговый режим</p>
+            <p className="mt-1 text-sm text-neutral-500">
+              {taxModalDocType === "invoice"
+                ? "Шаблон счёта выбирается автоматически по типу покупателя. Цены заказа без НДС — при «С НДС» налог начисляется сверху."
+                : "Цены заказа без НДС — при «С НДС» налог начисляется сверху."}
+            </p>
 
-            <fieldset className="mt-4 space-y-2">
-              <legend className="sr-only">Налоговый режим</legend>
-              {(Object.keys(DOCUMENT_TAX_MODE_LABELS) as DocumentTaxMode[]).map((mode) => (
-                <label
-                  key={mode}
-                  className="flex cursor-pointer items-center gap-3 rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-800 hover:border-[#0F766E]"
-                >
+            {(() => {
+              const orderSubtotal = Number(order.total);
+              const vatRate = orgVatRate;
+              // Match SQL: round(subtotal * rate / 100, 2)
+              const vatAmountRounded =
+                taxModeDraft === "with_vat" && vatRate != null
+                  ? Math.round(((orderSubtotal * vatRate) / 100) * 100) / 100
+                  : 0;
+              const payTotal =
+                taxModeDraft === "with_vat"
+                  ? orderSubtotal + vatAmountRounded
+                  : orderSubtotal;
+              const withVatDisabled = vatRate == null;
+
+              return (
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-md border border-neutral-100 bg-neutral-50 px-3 py-2 text-sm">
+                    <p className="text-neutral-500">Сумма заказа</p>
+                    <p className="text-lg font-semibold text-neutral-800">
+                      {formatPrice(orderSubtotal)}
+                    </p>
+                  </div>
+
+                  <fieldset className="space-y-2">
+                    <legend className="sr-only">Налоговый режим</legend>
+                    <label
+                      className={`flex cursor-pointer flex-col gap-1 rounded-md border px-3 py-3 text-sm ${
+                        taxModeDraft === "without_vat"
+                          ? "border-[#0F766E] bg-[#0F766E]/5"
+                          : "border-neutral-200 hover:border-[#0F766E]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-3 font-medium text-neutral-800">
+                        <input
+                          type="radio"
+                          name="document-tax-mode"
+                          value="without_vat"
+                          checked={taxModeDraft === "without_vat"}
+                          onChange={() => setTaxModeDraft("without_vat")}
+                          className="accent-[#0F766E]"
+                        />
+                        Без НДС
+                      </span>
+                      {taxModeDraft === "without_vat" && (
+                        <span className="pl-7 text-neutral-600">
+                          К оплате:{" "}
+                          <span className="font-semibold text-neutral-800">
+                            {formatPrice(orderSubtotal)}
+                          </span>
+                        </span>
+                      )}
+                    </label>
+
+                    <label
+                      className={`flex cursor-pointer flex-col gap-1 rounded-md border px-3 py-3 text-sm ${
+                        withVatDisabled
+                          ? "cursor-not-allowed border-neutral-100 bg-neutral-50 opacity-60"
+                          : taxModeDraft === "with_vat"
+                            ? "border-[#0F766E] bg-[#0F766E]/5"
+                            : "border-neutral-200 hover:border-[#0F766E]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-3 font-medium text-neutral-800">
+                        <input
+                          type="radio"
+                          name="document-tax-mode"
+                          value="with_vat"
+                          checked={taxModeDraft === "with_vat"}
+                          onChange={() => setTaxModeDraft("with_vat")}
+                          disabled={withVatDisabled}
+                          className="accent-[#0F766E]"
+                        />
+                        С НДС{vatRate != null ? ` (${vatRate}%)` : ""}
+                      </span>
+                      {withVatDisabled ? (
+                        <span className="pl-7 text-xs text-red-600">
+                          Укажите ставку НДС в настройках организации
+                        </span>
+                      ) : taxModeDraft === "with_vat" ? (
+                        <span className="space-y-0.5 pl-7 text-neutral-600">
+                          <span className="block">
+                            НДС:{" "}
+                            <span className="font-medium text-neutral-800">
+                              {formatPrice(vatAmountRounded)}
+                            </span>
+                          </span>
+                          <span className="block">
+                            К оплате:{" "}
+                            <span className="font-semibold text-neutral-800">
+                              {formatPrice(payTotal)}
+                            </span>
+                          </span>
+                        </span>
+                      ) : null}
+                    </label>
+                  </fieldset>
+                </div>
+              );
+            })()}
+
+            {taxModalError && (
+              <p className="mt-3 text-sm text-red-600" role="alert">
+                {taxModalError}
+              </p>
+            )}
+
+            {taxModalDocType === "invoice" && (
+              <div className="mt-4 space-y-3 border-t border-neutral-100 pt-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                  Договор (необязательно)
+                </p>
+                <label className="block text-sm text-neutral-600">
+                  Номер договора
                   <input
-                    type="radio"
-                    name="document-tax-mode"
-                    value={mode}
-                    checked={taxModeDraft === mode}
-                    onChange={() => setTaxModeDraft(mode)}
-                    className="accent-[#0F766E]"
+                    className={`mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 ${focusRing}`}
+                    value={contractNumberDraft}
+                    onChange={(e) => setContractNumberDraft(e.target.value)}
+                    placeholder="Без договора — оставьте пустым"
                   />
-                  {DOCUMENT_TAX_MODE_LABELS[mode]}
                 </label>
-              ))}
-            </fieldset>
+                <label className="block text-sm text-neutral-600">
+                  Дата договора
+                  <input
+                    type="date"
+                    className={`mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 ${focusRing}`}
+                    value={contractDateDraft}
+                    onChange={(e) => setContractDateDraft(e.target.value)}
+                  />
+                </label>
+              </div>
+            )}
 
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -1044,7 +1185,8 @@ export default function StaffOrderDetailPage() {
               <button
                 type="button"
                 onClick={() => void confirmGenerateDocument()}
-                className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+                disabled={taxModeDraft === "with_vat" && orgVatRate == null}
+                className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:bg-neutral-300 ${focusRing}`}
               >
                 Создать
               </button>

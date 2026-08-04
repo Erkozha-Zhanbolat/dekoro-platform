@@ -16,7 +16,16 @@ import {
   uploadOrganizationAsset,
 } from "@/lib/staff/organizationAssets";
 import {
+  emptyPaymentProfileForm,
+  listOrganizationPaymentProfiles,
+  upsertOrganizationPaymentProfile,
+  type OrganizationPaymentProfile,
+  type OrganizationPaymentProfileUpdate,
+} from "@/lib/staff/paymentProfiles";
+import {
+  CUSTOMER_TYPE_LABELS,
   DOCUMENT_TAX_MODE_LABELS,
+  type CustomerType,
   type DocumentTaxMode,
   type OrganizationAssetKind,
 } from "@/types/database";
@@ -48,6 +57,14 @@ export default function StaffOrganizationSettingsPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
 
+  const [individualPayment, setIndividualPayment] =
+    useState<OrganizationPaymentProfileUpdate>(emptyPaymentProfileForm("individual"));
+  const [companyPayment, setCompanyPayment] =
+    useState<OrganizationPaymentProfileUpdate>(emptyPaymentProfileForm("company"));
+  const [paymentBusyType, setPaymentBusyType] = useState<CustomerType | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentOkType, setPaymentOkType] = useState<CustomerType | null>(null);
+
   useEffect(() => {
     if (profile && profile.role !== "admin") {
       router.replace("/staff");
@@ -56,11 +73,12 @@ export default function StaffOrganizationSettingsPage() {
 
   useEffect(() => {
     let ignore = false;
-    getOrganizationSettings()
-      .then((row) => {
+    Promise.all([getOrganizationSettings(), listOrganizationPaymentProfiles()])
+      .then(([row, profiles]) => {
         if (ignore) return;
         setSettings(row);
         setForm(emptyOrganizationForm(row));
+        applyPaymentProfiles(profiles, setIndividualPayment, setCompanyPayment);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -76,6 +94,32 @@ export default function StaffOrganizationSettingsPage() {
       ignore = true;
     };
   }, []);
+
+  async function handleSavePaymentProfile(customerType: CustomerType) {
+    if (!isAdmin || paymentBusyType) return;
+    const draft = customerType === "individual" ? individualPayment : companyPayment;
+    setPaymentBusyType(customerType);
+    setPaymentError(null);
+    setPaymentOkType(null);
+    try {
+      const saved = await upsertOrganizationPaymentProfile({
+        ...draft,
+        customer_type: customerType,
+      });
+      if (customerType === "individual") {
+        setIndividualPayment(emptyPaymentProfileForm("individual", saved));
+      } else {
+        setCompanyPayment(emptyPaymentProfileForm("company", saved));
+      }
+      setPaymentOkType(customerType);
+    } catch (error: unknown) {
+      setPaymentError(
+        error instanceof Error ? error.message : "Не удалось сохранить платёжный профиль",
+      );
+    } finally {
+      setPaymentBusyType(null);
+    }
+  }
 
   function patch<K extends keyof OrganizationSettingsUpdate>(
     key: K,
@@ -244,7 +288,12 @@ export default function StaffOrganizationSettingsPage() {
         </section>
 
         <section className="rounded-lg border border-neutral-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-neutral-800">Банковские реквизиты</h2>
+          <h2 className="text-lg font-semibold text-neutral-800">
+            Банковские реквизиты (общие)
+          </h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Используются в snapshot поставщика и накладной. Для счетов настройте профили ниже.
+          </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Field label="Банк *" className="sm:col-span-2">
               <input
@@ -282,6 +331,44 @@ export default function StaffOrganizationSettingsPage() {
                 disabled={!isAdmin}
               />
             </Field>
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-neutral-800">
+            Банковские реквизиты для выставления счетов
+          </h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Отдельные счета DEKORO как получателя платежа для физлиц и юрлиц. Шаблон счёта
+            выбирается автоматически по типу покупателя. Сохранение создаёт новую версию
+            профиля и деактивирует предыдущую — уже сформированные счета не меняются.
+          </p>
+
+          {paymentError && (
+            <p className="mt-3 text-sm text-red-600" role="alert">
+              {paymentError}
+            </p>
+          )}
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <PaymentProfileCard
+              title={`Для физических лиц (${CUSTOMER_TYPE_LABELS.individual})`}
+              form={individualPayment}
+              busy={paymentBusyType === "individual"}
+              saved={paymentOkType === "individual"}
+              disabled={!isAdmin}
+              onChange={setIndividualPayment}
+              onSave={() => void handleSavePaymentProfile("individual")}
+            />
+            <PaymentProfileCard
+              title={`Для юридических лиц (${CUSTOMER_TYPE_LABELS.company})`}
+              form={companyPayment}
+              busy={paymentBusyType === "company"}
+              saved={paymentOkType === "company"}
+              disabled={!isAdmin}
+              onChange={setCompanyPayment}
+              onSave={() => void handleSavePaymentProfile("company")}
+            />
           </div>
         </section>
 
@@ -420,6 +507,153 @@ function Field({
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+function applyPaymentProfiles(
+  profiles: OrganizationPaymentProfile[],
+  setIndividual: (v: OrganizationPaymentProfileUpdate) => void,
+  setCompany: (v: OrganizationPaymentProfileUpdate) => void,
+) {
+  const individual = profiles.find((p) => p.customer_type === "individual");
+  const company = profiles.find((p) => p.customer_type === "company");
+  setIndividual(emptyPaymentProfileForm("individual", individual));
+  setCompany(emptyPaymentProfileForm("company", company));
+}
+
+function PaymentProfileCard({
+  title,
+  form,
+  busy,
+  saved,
+  disabled,
+  onChange,
+  onSave,
+}: {
+  title: string;
+  form: OrganizationPaymentProfileUpdate;
+  busy: boolean;
+  saved: boolean;
+  disabled: boolean;
+  onChange: (next: OrganizationPaymentProfileUpdate) => void;
+  onSave: () => void;
+}) {
+  function patch<K extends keyof OrganizationPaymentProfileUpdate>(
+    key: K,
+    value: OrganizationPaymentProfileUpdate[K],
+  ) {
+    onChange({ ...form, [key]: value });
+  }
+
+  return (
+    <div className="rounded-md border border-neutral-100 bg-neutral-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-neutral-800">{title}</h3>
+        <span
+          className={`rounded px-2 py-0.5 text-xs font-medium ${
+            form.is_active
+              ? "bg-[#0F766E]/10 text-[#0F766E]"
+              : "bg-neutral-200 text-neutral-600"
+          }`}
+        >
+          {form.is_active ? "Активный профиль" : "Будет неактивен"}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-neutral-500">
+        При сохранении текущий активный профиль деактивируется и создаётся новая запись.
+        Старые счета продолжают использовать свой snapshot.
+      </p>
+      <div className="mt-3 grid gap-3">
+        <Field label="Получатель *">
+          <input
+            className={inputClass}
+            value={form.beneficiary_name}
+            onChange={(e) => patch("beneficiary_name", e.target.value)}
+            disabled={disabled || busy}
+            required
+          />
+        </Field>
+        <Field label="ИИН/БИН *">
+          <input
+            className={inputClass}
+            value={form.bin_iin}
+            onChange={(e) => patch("bin_iin", e.target.value)}
+            disabled={disabled || busy}
+            required
+          />
+        </Field>
+        <Field label="Банк *">
+          <input
+            className={inputClass}
+            value={form.bank_name}
+            onChange={(e) => patch("bank_name", e.target.value)}
+            disabled={disabled || busy}
+            required
+          />
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="БИК *">
+            <input
+              className={inputClass}
+              value={form.bank_bik}
+              onChange={(e) => patch("bank_bik", e.target.value)}
+              disabled={disabled || busy}
+              required
+            />
+          </Field>
+          <Field label="КБе *">
+            <input
+              className={inputClass}
+              value={form.bank_kbe}
+              onChange={(e) => patch("bank_kbe", e.target.value)}
+              disabled={disabled || busy}
+              required
+            />
+          </Field>
+        </div>
+        <Field label="ИИК *">
+          <input
+            className={inputClass}
+            value={form.bank_iik}
+            onChange={(e) => patch("bank_iik", e.target.value)}
+            disabled={disabled || busy}
+            required
+          />
+        </Field>
+        <Field label="КНП">
+          <input
+            className={inputClass}
+            value={form.payment_purpose_code}
+            onChange={(e) => patch("payment_purpose_code", e.target.value)}
+            disabled={disabled || busy}
+            placeholder="например 710"
+          />
+        </Field>
+        <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <input
+            type="checkbox"
+            className="accent-[#0F766E]"
+            checked={form.is_active}
+            onChange={(e) => patch("is_active", e.target.checked)}
+            disabled={disabled || busy}
+          />
+          Активен (используется при создании счёта)
+        </label>
+      </div>
+      {saved && (
+        <p className="mt-2 text-sm text-[#0F766E]" role="status">
+          Профиль сохранён
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={disabled || busy}
+        className={`mt-3 rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:bg-neutral-300 ${focusRing}`}
+      >
+        {busy ? "Сохранение..." : "Сохранить новую версию"}
+      </button>
+    </div>
   );
 }
 

@@ -610,15 +610,53 @@ export type OrderDocument = {
   metadata: OrderDocumentMetadata;
 };
 
+/** Invoice PDF layout chosen at generate time from customers.customer_type (018). */
+export type InvoiceTemplate = "individual" | "company";
+
+/** DEKORO beneficiary bank profile for invoices (018). */
+export type OrganizationPaymentProfile = {
+  id: string;
+  customer_type: CustomerType;
+  beneficiary_name: string;
+  bin_iin: string;
+  bank_name: string;
+  bank_bik: string;
+  bank_iik: string;
+  bank_kbe: string;
+  payment_purpose_code: string | null;
+  is_active: boolean;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrganizationPaymentProfileUpdate = {
+  customer_type: CustomerType;
+  beneficiary_name: string;
+  bin_iin: string;
+  bank_name: string;
+  bank_bik: string;
+  bank_iik: string;
+  bank_kbe: string;
+  payment_purpose_code: string;
+  is_active: boolean;
+};
+
 /** Snapshot stored in order_documents.metadata for PDF (incl. KZ form 3-2). */
 export type OrderDocumentMetadata = {
   schema_version: number;
   document_type: OrderDocumentType;
   document_number: string;
   form_hint: string;
+  /** Present on invoices from migration 018+. Legacy docs may omit. */
+  invoice_template?: InvoiceTemplate | null;
   generated_at: string;
+  warning_text?: string | null;
   order: Record<string, unknown>;
   supplier: Record<string, unknown>;
+  /** Invoice-only from 018; null/absent on delivery notes and legacy invoices. */
+  payment_profile?: Record<string, unknown> | null;
   buyer: Record<string, unknown>;
   items: OrderDocumentMetadataItem[];
   totals: Record<string, unknown>;

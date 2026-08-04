@@ -9,6 +9,7 @@ import {
 } from "@/lib/staff/documents";
 import type { StaffOrderDocumentDetails } from "@/lib/staff/documents";
 import { formatPrice } from "@/lib/formatPrice";
+import { amountInWordsKzt } from "@/lib/pdf/amountInWordsKzt";
 import {
   ORDER_DOCUMENT_STATUS_LABELS,
   ORDER_DOCUMENT_TYPE_LABELS,
@@ -130,7 +131,25 @@ export default function StaffDocumentViewPage() {
   const vatRate = totals.vat_rate != null ? Number(totals.vat_rate) : null;
   const vatAmount = totals.vat_amount != null ? Number(totals.vat_amount) : null;
   const amountWithoutVat =
-    totals.amount_without_vat != null ? Number(totals.amount_without_vat) : null;
+    totals.amount_without_vat != null
+      ? Number(totals.amount_without_vat)
+      : totals.subtotal != null
+        ? Number(totals.subtotal)
+        : null;
+  const finalTotal =
+    totals.final_total != null
+      ? Number(totals.final_total)
+      : totals.total != null
+        ? Number(totals.total)
+        : null;
+  let amountWords = String(totals.amount_in_words ?? "").trim();
+  if (!amountWords && finalTotal != null) {
+    try {
+      amountWords = amountInWordsKzt(finalTotal);
+    } catch {
+      amountWords = "";
+    }
+  }
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -153,7 +172,18 @@ export default function StaffDocumentViewPage() {
           </p>
           <p className="mt-1 text-sm text-neutral-600">
             Основание: {String(basis.label ?? `Заказ ${String(basis.order_number ?? "")}`)}
+            {basis.contract_label
+              ? ` · ${String(basis.contract_label)}`
+              : ""}
           </p>
+          {document.metadata.invoice_template && (
+            <p className="mt-1 text-sm text-neutral-500">
+              Шаблон счёта:{" "}
+              {document.metadata.invoice_template === "company"
+                ? "юридическое лицо"
+                : "физическое лицо"}
+            </p>
+          )}
           {document.printed_at && (
             <p className="mt-1 text-sm text-neutral-500">
               Первая печать: {new Date(document.printed_at).toLocaleString("ru-RU")}
@@ -214,14 +244,32 @@ export default function StaffDocumentViewPage() {
         <h2 className="text-lg font-semibold text-neutral-800">Покупатель</h2>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-neutral-400">Название</dt>
+            <dt className="text-neutral-400">
+              {String(buyer.customer_type ?? "") === "individual"
+                ? "ФИО"
+                : "Название"}
+            </dt>
             <dd className="text-neutral-800">
-              {String(buyer.legal_name ?? buyer.display_name ?? "—")}
+              {String(
+                buyer.customer_type === "individual"
+                  ? (buyer.display_name ?? buyer.legal_name ?? "—")
+                  : (buyer.legal_name ?? buyer.display_name ?? "—"),
+              )}
             </dd>
           </div>
           <div>
-            <dt className="text-neutral-400">ИИН/БИН</dt>
-            <dd className="text-neutral-800">{String(buyer.iin_bin ?? "—")}</dd>
+            <dt className="text-neutral-400">
+              {String(buyer.customer_type ?? "") === "individual"
+                ? "ИИН"
+                : String(buyer.customer_type ?? "") === "company"
+                  ? "БИН"
+                  : "ИИН/БИН"}
+            </dt>
+            <dd className="text-neutral-800">
+              {String(
+                buyer.bin ?? buyer.iin ?? buyer.iin_bin ?? "—",
+              )}
+            </dd>
           </div>
           <div>
             <dt className="text-neutral-400">Контакт</dt>
@@ -231,8 +279,72 @@ export default function StaffDocumentViewPage() {
             <dt className="text-neutral-400">Телефон</dt>
             <dd className="text-neutral-800">{String(buyer.phone ?? "—")}</dd>
           </div>
+          <div className="sm:col-span-2">
+            <dt className="text-neutral-400">Адрес</dt>
+            <dd className="text-neutral-800">{String(buyer.address ?? "—")}</dd>
+          </div>
         </dl>
       </section>
+
+      {document.document_type === "invoice" && document.metadata.payment_profile && (
+        <section className="mt-4 rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-neutral-800">
+            Реквизиты для оплаты
+          </h2>
+          <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            {document.metadata.payment_profile.id != null && (
+              <div className="sm:col-span-2">
+                <dt className="text-neutral-400">ID профиля (snapshot)</dt>
+                <dd className="font-mono text-xs text-neutral-600">
+                  {String(document.metadata.payment_profile.id)}
+                </dd>
+              </div>
+            )}
+            <div className="sm:col-span-2">
+              <dt className="text-neutral-400">Получатель</dt>
+              <dd className="text-neutral-800">
+                {String(document.metadata.payment_profile.beneficiary_name ?? "—")}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-neutral-400">ИИН/БИН</dt>
+              <dd className="text-neutral-800">
+                {String(document.metadata.payment_profile.bin_iin ?? "—")}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-neutral-400">КНП</dt>
+              <dd className="text-neutral-800">
+                {String(document.metadata.payment_profile.payment_purpose_code ?? "—")}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-neutral-400">Банк</dt>
+              <dd className="text-neutral-800">
+                {String(document.metadata.payment_profile.bank_name ?? "—")}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-neutral-400">БИК</dt>
+              <dd className="text-neutral-800">
+                {String(document.metadata.payment_profile.bank_bik ?? "—")}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-neutral-400">КБе</dt>
+              <dd className="text-neutral-800">
+                {String(document.metadata.payment_profile.bank_kbe ?? "—")}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-neutral-400">ИИК</dt>
+              <dd className="text-neutral-800">
+                {String(document.metadata.payment_profile.bank_iik ?? "—")}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       <section className="mt-4 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full min-w-[640px] text-sm">
@@ -269,30 +381,37 @@ export default function StaffDocumentViewPage() {
           </tbody>
         </table>
         <div className="border-t border-neutral-200 px-4 py-3 text-right text-sm">
-          <p className="text-neutral-500">
-            Подытог: {formatPrice(Number(totals.subtotal ?? 0))}
-          </p>
-          <p className="text-neutral-500">
-            Скидка: {formatPrice(Number(totals.discount ?? 0))}
+          <p className="mb-2 text-left text-xs text-neutral-400">
+            Цены заказа — без НДС. При режиме «С НДС» налог начисляется сверху.
           </p>
           {taxMode === "without_vat" ? (
-            <p className="text-neutral-600">{taxLabel || "Без НДС"}</p>
+            <p className="mt-1 text-lg font-semibold text-neutral-800">
+              Итого: {formatPrice(finalTotal ?? 0)} {String(totals.currency ?? "KZT")}
+            </p>
           ) : (
             <>
-              {amountWithoutVat != null && (
-                <p className="text-neutral-500">
-                  Сумма без НДС: {formatPrice(amountWithoutVat)}
-                </p>
-              )}
+              <p className="text-neutral-500">
+                Стоимость товаров:{" "}
+                {formatPrice(amountWithoutVat ?? Number(totals.subtotal ?? 0))}
+              </p>
               <p className="text-neutral-500">
                 НДС{vatRate != null ? ` (${vatRate}%)` : ""}:{" "}
                 {vatAmount != null ? formatPrice(vatAmount) : "—"}
               </p>
+              <p className="mt-1 text-lg font-semibold text-neutral-800">
+                Итого к оплате: {formatPrice(finalTotal ?? 0)}{" "}
+                {String(totals.currency ?? "KZT")}
+              </p>
             </>
           )}
-          <p className="mt-1 text-lg font-semibold text-neutral-800">
-            Итого: {formatPrice(Number(totals.total ?? 0))} {String(totals.currency ?? "KZT")}
-          </p>
+          {taxLabel && (
+            <p className="mt-1 text-xs text-neutral-400">{taxLabel}</p>
+          )}
+          {amountWords && (
+            <p className="mt-2 text-left text-sm text-neutral-600">
+              Всего к оплате: {amountWords}
+            </p>
+          )}
         </div>
       </section>
     </div>

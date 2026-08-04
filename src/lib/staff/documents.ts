@@ -105,9 +105,15 @@ export async function getStaffDocument(
   };
 }
 
+export type GenerateInvoiceOptions = {
+  contractNumber?: string | null;
+  contractDate?: string | null; // YYYY-MM-DD
+};
+
 export async function generateStaffInvoice(
   orderId: string,
   taxMode: DocumentTaxMode,
+  options: GenerateInvoiceOptions = {},
 ): Promise<OrderDocument> {
   const { prepareDocumentAssetSnapshot, failDocumentAssetSnapshot } = await import(
     "@/lib/staff/organizationAssets"
@@ -115,10 +121,15 @@ export async function generateStaffInvoice(
 
   const intentId = await prepareDocumentAssetSnapshot(orderId, "invoice");
 
+  const contractNumber = options.contractNumber?.trim() || null;
+  const contractDate = options.contractDate?.trim() || null;
+
   const { data, error } = await supabase.rpc("staff_generate_invoice", {
     p_order_id: orderId,
     p_tax_mode: taxMode,
     p_snapshot_intent_id: intentId,
+    p_contract_number: contractNumber,
+    p_contract_date: contractDate,
   });
 
   if (error) {
