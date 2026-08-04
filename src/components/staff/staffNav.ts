@@ -55,7 +55,7 @@ const STAFF_NAV_ITEMS: readonly StaffNavItem[] = [
   {
     href: "/staff/settings",
     label: "Настройки",
-    enabled: false,
+    enabled: true,
     roles: ["admin"],
   },
 ];

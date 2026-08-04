@@ -1,4 +1,4 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { StaffOrderDocumentDetails } from "@/types/database";
 import {
   PDF_PAGE_SIZE,
@@ -8,6 +8,7 @@ import {
   formatPdfQty,
   str,
 } from "./format";
+import type { ResolvedSupplierImages } from "./types";
 
 const styles = StyleSheet.create({
   page: {
@@ -17,6 +18,17 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     paddingHorizontal: 40,
     color: "#171717",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 12,
+  },
+  logo: {
+    width: 64,
+    height: 64,
+    objectFit: "contain",
   },
   title: {
     fontSize: 14,
@@ -108,14 +120,49 @@ const styles = StyleSheet.create({
     color: "#737373",
     fontSize: 8,
   },
+  signRow: {
+    marginTop: 16,
+    flexDirection: "row",
+    gap: 24,
+  },
+  signCol: {
+    flex: 1,
+  },
+  signatureImage: {
+    width: 120,
+    height: 48,
+    objectFit: "contain",
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  stampImage: {
+    width: 90,
+    height: 90,
+    objectFit: "contain",
+    marginTop: 6,
+  },
+  signLine: {
+    marginTop: 28,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#171717",
+  },
+  stampPlaceholder: {
+    marginTop: 8,
+    width: 90,
+    height: 90,
+    borderWidth: 0.5,
+    borderColor: "#d4d4d4",
+    borderStyle: "dashed",
+  },
 });
 
 type Props = {
   document: StaffOrderDocumentDetails;
+  images: ResolvedSupplierImages;
 };
 
 /** Minimalist KZ invoice — data only from order_documents.metadata. */
-export function InvoicePdfDocument({ document }: Props) {
+export function InvoicePdfDocument({ document, images }: Props) {
   const meta = document.metadata;
   const supplier = meta.supplier ?? {};
   const buyer = meta.buyer ?? {};
@@ -138,10 +185,24 @@ export function InvoicePdfDocument({ document }: Props) {
       language="ru"
     >
       <Page size={PDF_PAGE_SIZE} orientation="portrait" style={styles.page}>
-        <Text style={styles.title}>Счёт на оплату {documentNumber}</Text>
-        <Text style={styles.subtitle}>
-          от {formatPdfDate(meta.generated_at)} · {str(basis.label)}
-        </Text>
+        <View style={styles.headerRow}>
+          {images.logoUrl ? (
+            // react-pdf Image — not a DOM <img>; alt is N/A
+            // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer Image
+            <Image src={images.logoUrl} style={styles.logo} />
+          ) : null}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Счёт на оплату {documentNumber}</Text>
+            <Text style={styles.subtitle}>
+              от {formatPdfDate(meta.generated_at)} · {str(basis.label)}
+            </Text>
+            {!images.logoUrl ? (
+              <Text style={[styles.line, { fontWeight: 700 }]}>
+                {str(supplier.legal_name)}
+              </Text>
+            ) : null}
+          </View>
+        </View>
 
         <View style={[styles.section, styles.row]}>
           <View style={styles.col}>
@@ -152,6 +213,9 @@ export function InvoicePdfDocument({ document }: Props) {
             <Text style={styles.line}>тел. {str(supplier.phone)}</Text>
             {supplier.email ? (
               <Text style={styles.line}>{str(supplier.email)}</Text>
+            ) : null}
+            {supplier.website ? (
+              <Text style={styles.line}>{str(supplier.website)}</Text>
             ) : null}
           </View>
           <View style={styles.col}>
@@ -166,7 +230,6 @@ export function InvoicePdfDocument({ document }: Props) {
           </View>
         </View>
 
-        {/* Rows wrap={false}: whole line moves to next page — never clipped mid-row. */}
         <View>
           <View style={styles.tableHeader} wrap={false}>
             <Text style={[styles.th, styles.cellNo]}>№</Text>
@@ -235,9 +298,29 @@ export function InvoicePdfDocument({ document }: Props) {
           <Text style={styles.line}>БИК: {str(supplier.bank_bik)}</Text>
           <Text style={styles.line}>ИИК: {str(supplier.bank_iik)}</Text>
           <Text style={styles.line}>КБе: {str(supplier.bank_kbe)}</Text>
-          <Text style={[styles.line, { marginTop: 8 }]}>
-            Директор: {str(supplier.director_name)}
-          </Text>
+        </View>
+
+        <View style={styles.signRow} wrap={false}>
+          <View style={styles.signCol}>
+            <Text style={styles.sectionTitle}>Директор</Text>
+            <Text style={styles.line}>{str(supplier.director_name)}</Text>
+            {images.signatureUrl ? (
+              // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer Image
+              <Image src={images.signatureUrl} style={styles.signatureImage} />
+            ) : (
+              <View style={styles.signLine} />
+            )}
+            <Text style={styles.muted}>подпись</Text>
+          </View>
+          <View style={styles.signCol}>
+            <Text style={styles.sectionTitle}>М.П.</Text>
+            {images.stampUrl ? (
+              // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer Image
+              <Image src={images.stampUrl} style={styles.stampImage} />
+            ) : (
+              <View style={styles.stampPlaceholder} />
+            )}
+          </View>
         </View>
       </Page>
     </Document>

@@ -1,4 +1,4 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { StaffOrderDocumentDetails } from "@/types/database";
 import {
   PDF_PAGE_SIZE,
@@ -8,12 +8,8 @@ import {
   formatPdfQty,
   str,
 } from "./format";
+import type { ResolvedSupplierImages } from "./types";
 
-/**
- * Delivery note oriented to Kazakhstan form 3-2
- * («Накладная на отпуск запасов»). Layout is tabular / formal,
- * without decorative design. All fields from metadata only.
- */
 const styles = StyleSheet.create({
   page: {
     fontFamily: "Roboto",
@@ -27,6 +23,20 @@ const styles = StyleSheet.create({
     fontSize: 7,
     textAlign: "right",
     marginBottom: 6,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 6,
+  },
+  logo: {
+    width: 48,
+    height: 48,
+    objectFit: "contain",
+  },
+  orgBlock: {
+    flex: 1,
   },
   orgName: {
     fontSize: 10,
@@ -163,7 +173,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#000",
     padding: 6,
-    minHeight: 70,
+    minHeight: 90,
   },
   signTitle: {
     fontSize: 7,
@@ -177,6 +187,26 @@ const styles = StyleSheet.create({
     borderBottomColor: "#000",
     paddingBottom: 2,
   },
+  signatureImage: {
+    width: 110,
+    height: 40,
+    objectFit: "contain",
+    marginTop: 6,
+  },
+  stampImage: {
+    width: 72,
+    height: 72,
+    objectFit: "contain",
+    marginTop: 6,
+  },
+  stampPlaceholder: {
+    marginTop: 8,
+    width: 72,
+    height: 72,
+    borderWidth: 0.5,
+    borderColor: "#999",
+    borderStyle: "dashed",
+  },
   footerNote: {
     marginTop: 10,
     fontSize: 6,
@@ -186,9 +216,10 @@ const styles = StyleSheet.create({
 
 type Props = {
   document: StaffOrderDocumentDetails;
+  images: ResolvedSupplierImages;
 };
 
-export function DeliveryNotePdfDocument({ document }: Props) {
+export function DeliveryNotePdfDocument({ document, images }: Props) {
   const meta = document.metadata;
   const supplier = meta.supplier ?? {};
   const buyer = meta.buyer ?? {};
@@ -216,11 +247,22 @@ export function DeliveryNotePdfDocument({ document }: Props) {
     >
       <Page size={PDF_PAGE_SIZE} orientation="portrait" style={styles.page}>
         <Text style={styles.formCode}>Форма 3-2</Text>
-        <Text style={styles.orgName}>{str(supplier.legal_name)}</Text>
-        <Text style={styles.orgLine}>БИН {str(supplier.bin)}</Text>
-        <Text style={styles.orgLine}>{str(supplier.address)}</Text>
-        <Text style={styles.orgLine}>тел. {str(supplier.phone)}</Text>
-        {warehouse ? <Text style={styles.orgLine}>Склад: {warehouse}</Text> : null}
+        <View style={styles.headerRow}>
+          {images.logoUrl ? (
+            // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer Image
+            <Image src={images.logoUrl} style={styles.logo} />
+          ) : null}
+          <View style={styles.orgBlock}>
+            <Text style={styles.orgName}>{str(supplier.legal_name)}</Text>
+            <Text style={styles.orgLine}>БИН {str(supplier.bin)}</Text>
+            <Text style={styles.orgLine}>{str(supplier.address)}</Text>
+            <Text style={styles.orgLine}>тел. {str(supplier.phone)}</Text>
+            {warehouse ? <Text style={styles.orgLine}>Склад: {warehouse}</Text> : null}
+            {supplier.warehouse_address ? (
+              <Text style={styles.orgLine}>{str(supplier.warehouse_address)}</Text>
+            ) : null}
+          </View>
+        </View>
 
         <Text style={styles.title}>НАКЛАДНАЯ НА ОТПУСК ЗАПАСОВ</Text>
         <View style={styles.docMeta}>
@@ -265,7 +307,6 @@ export function DeliveryNotePdfDocument({ document }: Props) {
           </View>
         </View>
 
-        {/* Header + rows as siblings so rows paginate; wrap={false} avoids mid-row clip. */}
         <View style={styles.tableHeader} wrap={false}>
           <Text style={[styles.th, styles.cNo]}>№</Text>
           <Text style={[styles.th, styles.cName]}>Наименование</Text>
@@ -344,16 +385,31 @@ export function DeliveryNotePdfDocument({ document }: Props) {
             <Text style={styles.signLine}>
               Должность: {str(form32.released_by_position)}
             </Text>
-            <Text style={styles.signLine}>ФИО: {str(form32.released_by_name)}</Text>
-            <Text style={styles.signLine}>Подпись / дата</Text>
+            <Text style={styles.signLine}>
+              ФИО: {str(form32.released_by_name) !== "—"
+                ? str(form32.released_by_name)
+                : str(supplier.director_name)}
+            </Text>
+            {images.signatureUrl ? (
+              // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer Image
+              <Image src={images.signatureUrl} style={styles.signatureImage} />
+            ) : (
+              <Text style={styles.signLine}>Подпись / дата</Text>
+            )}
           </View>
           <View style={styles.signCol}>
-            <Text style={styles.signTitle}>Получил</Text>
+            <Text style={styles.signTitle}>Получил / М.П.</Text>
             <Text style={styles.signLine}>
               Должность: {str(form32.received_by_position)}
             </Text>
             <Text style={styles.signLine}>ФИО: {str(form32.received_by_name)}</Text>
             <Text style={styles.signLine}>Подпись / дата</Text>
+            {images.stampUrl ? (
+              // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer Image
+              <Image src={images.stampUrl} style={styles.stampImage} />
+            ) : (
+              <View style={styles.stampPlaceholder} />
+            )}
           </View>
         </View>
 

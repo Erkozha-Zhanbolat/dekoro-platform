@@ -109,12 +109,20 @@ export async function generateStaffInvoice(
   orderId: string,
   taxMode: DocumentTaxMode,
 ): Promise<OrderDocument> {
+  const { prepareDocumentAssetSnapshot, failDocumentAssetSnapshot } = await import(
+    "@/lib/staff/organizationAssets"
+  );
+
+  const intentId = await prepareDocumentAssetSnapshot(orderId, "invoice");
+
   const { data, error } = await supabase.rpc("staff_generate_invoice", {
     p_order_id: orderId,
     p_tax_mode: taxMode,
+    p_snapshot_intent_id: intentId,
   });
 
   if (error) {
+    await failDocumentAssetSnapshot(intentId);
     throw new Error(error.message || "Не удалось сформировать счёт");
   }
 
@@ -125,12 +133,20 @@ export async function generateStaffDeliveryNote(
   orderId: string,
   taxMode: DocumentTaxMode,
 ): Promise<OrderDocument> {
+  const { prepareDocumentAssetSnapshot, failDocumentAssetSnapshot } = await import(
+    "@/lib/staff/organizationAssets"
+  );
+
+  const intentId = await prepareDocumentAssetSnapshot(orderId, "delivery_note");
+
   const { data, error } = await supabase.rpc("staff_generate_delivery_note", {
     p_order_id: orderId,
     p_tax_mode: taxMode,
+    p_snapshot_intent_id: intentId,
   });
 
   if (error) {
+    await failDocumentAssetSnapshot(intentId);
     throw new Error(error.message || "Не удалось сформировать накладную");
   }
 

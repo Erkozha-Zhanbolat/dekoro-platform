@@ -534,7 +534,9 @@ export const ORDER_DOCUMENT_STATUS_LABELS: Record<OrderDocumentStatus, string> =
   cancelled: "Отменён",
 };
 
-/** Singleton public.organization_settings (014). */
+/** Singleton public.organization_settings (014 + 016 assets). */
+export type OrganizationAssetKind = "logo" | "stamp" | "signature";
+
 export type OrganizationSettings = {
   id: string;
   singleton_key: "default";
@@ -544,6 +546,8 @@ export type OrganizationSettings = {
   city: string | null;
   phone: string | null;
   email: string | null;
+  website: string | null;
+  whatsapp: string | null;
   bank_name: string | null;
   bank_bik: string | null;
   bank_iik: string | null;
@@ -551,12 +555,42 @@ export type OrganizationSettings = {
   director_name: string | null;
   warehouse_name: string | null;
   warehouse_code: string | null;
+  warehouse_address: string | null;
   default_tax_mode: DocumentTaxMode;
   /** Percent, e.g. 12.00 for KZ. Null until admin configures. */
   vat_rate: number | null;
+  /** Private Storage path, e.g. organization/logo.png */
+  logo_path: string | null;
+  stamp_path: string | null;
+  signature_path: string | null;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/** Payload for staff_upsert_organization_settings (016). */
+export type OrganizationSettingsUpdate = {
+  legal_name: string;
+  bin: string;
+  address: string;
+  city: string;
+  phone: string;
+  email: string;
+  website: string;
+  whatsapp: string;
+  bank_name: string;
+  bank_bik: string;
+  bank_iik: string;
+  bank_kbe: string;
+  director_name: string;
+  warehouse_name: string;
+  warehouse_code: string;
+  warehouse_address: string;
+  default_tax_mode: DocumentTaxMode;
+  vat_rate: number | null;
+  logo_path: string | null;
+  stamp_path: string | null;
+  signature_path: string | null;
 };
 
 /** Row from public.order_documents (014 + 015 print audit). */
