@@ -154,10 +154,19 @@ export interface Profile {
 
 export type ProductStatus = "draft" | "active" | "archived";
 
+/** Staff product management UI statuses (Stage 19). Draft remains in DB for legacy rows. */
+export type StaffProductStatus = "active" | "archived";
+
+export const STAFF_PRODUCT_STATUS_LABELS: Record<StaffProductStatus, string> = {
+  active: "Активен",
+  archived: "Архив",
+};
+
 export interface Category {
   id: string;
   name: string;
   slug: string;
+  parent_id: string | null;
   description: string | null;
   image_url: string | null;
   sort_order: number;
@@ -166,9 +175,23 @@ export interface Category {
   updated_at: string;
 }
 
+/** Row from public.staff_list_categories(). */
+export type StaffCategoryListItem = {
+  id: string;
+  name: string;
+  slug: string;
+  parent_id: string | null;
+  sort_order: number;
+  is_active: boolean;
+  products_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export interface Product {
   id: string;
   category_id: string | null;
+  subcategory_id: string | null;
   name: string;
   slug: string;
   sku: string;
@@ -177,10 +200,75 @@ export interface Product {
   dimensions: string | null;
   unit: string;
   base_price: number | null;
+  min_order_qty: number;
+  length_mm: number | null;
+  width_mm: number | null;
+  thickness_mm: number | null;
+  weight_kg: number | null;
+  main_photo_path: string | null;
   status: ProductStatus;
   is_promotion: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/** Row from public.staff_list_products(). */
+export type StaffProductListItem = {
+  id: string;
+  sku: string;
+  name: string;
+  category_id: string | null;
+  category_name: string | null;
+  subcategory_id: string | null;
+  subcategory_name: string | null;
+  unit: string;
+  base_price: number | null;
+  min_order_qty: number;
+  status: ProductStatus;
+  main_photo_path: string | null;
+  available_quantity: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Payload from public.staff_get_product() / create / update. */
+export type StaffProductDetails = {
+  id: string;
+  sku: string;
+  name: string;
+  slug: string;
+  category_id: string | null;
+  category_name: string | null;
+  subcategory_id: string | null;
+  subcategory_name: string | null;
+  status: ProductStatus;
+  unit: string;
+  base_price: number | null;
+  min_order_qty: number;
+  length_mm: number | null;
+  width_mm: number | null;
+  thickness_mm: number | null;
+  weight_kg: number | null;
+  dimensions: string | null;
+  main_photo_path: string | null;
+  available_quantity: number;
+  physical_quantity: number;
+  reserved_quantity: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StaffProductCopyResult = StaffProductDetails & {
+  source_product_id: string;
+  source_main_photo_path: string | null;
+};
+
+export function canManageProducts(role: UserRole | null | undefined): boolean {
+  return role === "admin";
+}
+
+export function canReadProducts(role: UserRole | null | undefined): boolean {
+  return role === "admin" || role === "manager" || role === "warehouse";
 }
 
 export interface ProductImage {
