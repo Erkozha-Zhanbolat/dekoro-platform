@@ -162,6 +162,10 @@ $$;
 
 revoke all on function public.staff_can_manage_products()
   from public, anon, authenticated;
+-- Invoked from storage.objects policies (INSERT/UPDATE/DELETE) under the
+-- calling role — authenticated must be able to EXECUTE the policy helper.
+grant execute on function public.staff_can_manage_products()
+  to authenticated;
 
 create or replace function public.staff_can_read_products()
 returns boolean
@@ -177,6 +181,7 @@ $$;
 
 revoke all on function public.staff_can_read_products()
   from public, anon, authenticated;
+-- Internal helper only (RPCs + staff_can_read_product_image). No client GRANT.
 
 create or replace function public.staff_slugify_label(p_text text)
 returns text
@@ -386,6 +391,9 @@ $$;
 
 revoke all on function public.staff_can_read_product_image(text)
   from public, anon, authenticated;
+-- Invoked from storage.objects SELECT policy under the calling role.
+grant execute on function public.staff_can_read_product_image(text)
+  to authenticated;
 
 -- ============================================================
 -- 4. Storage bucket product-images
