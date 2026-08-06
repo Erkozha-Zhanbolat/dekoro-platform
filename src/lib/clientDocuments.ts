@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { recordDocumentEvent } from "@/lib/analytics/track";
 import type {
   ClientOrderDocumentDetails,
   ClientOrderDocumentListItem,
@@ -152,6 +153,14 @@ export async function downloadClientOrderDocument(
   const blob = await renderOrderDocumentPdf(document, {
     resolveAssetUrl: getClientDocumentAssetSignedUrl,
   });
+
+  // Authoritative document events — server checks order/document ownership.
+  if (document.document_type === "invoice") {
+    void recordDocumentEvent(orderId, documentId, "invoice_open");
+  } else if (document.document_type === "delivery_note") {
+    void recordDocumentEvent(orderId, documentId, "delivery_note_open");
+  }
+  void recordDocumentEvent(orderId, documentId, "document_download");
 
   const objectUrl = URL.createObjectURL(blob);
   try {

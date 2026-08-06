@@ -7,6 +7,7 @@ import type { FormEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
 import type { SignUpMetadata } from "@/context/AuthContext";
 import { getSafeNextPath, isSafeNextPath } from "@/lib/safeNextPath";
+import { flushAnalytics, linkVisitorToProfile, recordAuthEvent } from "@/lib/analytics/track";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -159,10 +160,15 @@ function RegisterForm() {
     }
 
     if (requiresConfirmation) {
+      // Session may be null — skip authoritative record until confirmed login.
+      await flushAnalytics();
       setNeedsEmailConfirmation(true);
       return;
     }
 
+    await linkVisitorToProfile();
+    await recordAuthEvent("register");
+    await flushAnalytics();
     router.replace(nextPath);
   }
 

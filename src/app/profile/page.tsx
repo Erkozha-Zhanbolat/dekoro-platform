@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
+import { AnalyticsConsentSettings } from "@/components/AnalyticsConsentBanner";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -48,6 +49,9 @@ export default function ProfilePage() {
           >
             Зарегистрироваться
           </Link>
+        </div>
+        <div className="mt-10 max-w-xl rounded-md border border-neutral-200 p-6">
+          <AnalyticsConsentSettings />
         </div>
       </div>
     );
@@ -112,6 +116,10 @@ export default function ProfilePage() {
             </>
           )}
         </dl>
+      </div>
+
+      <div className="mt-8 max-w-xl rounded-md border border-neutral-200 p-6">
+        <AnalyticsConsentSettings />
       </div>
 
       <button

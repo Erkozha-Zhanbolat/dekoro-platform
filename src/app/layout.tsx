@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -7,6 +8,8 @@ import { ProfileProvider } from "@/context/ProfileContext";
 import { CatalogProvider } from "@/context/CatalogContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
 import { CartProvider } from "@/context/CartContext";
+import { AnalyticsProvider } from "@/context/AnalyticsContext";
+import { AnalyticsConsentBanner } from "@/components/AnalyticsConsentBanner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,9 +44,14 @@ export default function RootLayout({
             <CatalogProvider>
               <FavoritesProvider>
                 <CartProvider>
-                  <Header />
-                  <main className="flex-1">{children}</main>
-                  <Footer />
+                  <Suspense fallback={null}>
+                    <AnalyticsProvider>
+                      <Header />
+                      <main className="flex-1">{children}</main>
+                      <Footer />
+                      <AnalyticsConsentBanner />
+                    </AnalyticsProvider>
+                  </Suspense>
                 </CartProvider>
               </FavoritesProvider>
             </CatalogProvider>

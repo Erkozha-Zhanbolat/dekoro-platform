@@ -6,6 +6,21 @@ import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { useSupabaseCatalog } from "@/lib/featureFlags";
 import { readLocalFavorites, writeLocalFavorites } from "@/lib/favorites";
+import { trackEvent } from "@/lib/analytics/track";
+
+function isProductUuid(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    id,
+  );
+}
+
+function trackFavorite(eventType: "favorite_add" | "favorite_remove", productId: string) {
+  trackEvent({
+    event_type: eventType,
+    product_id: isProductUuid(productId) ? productId : null,
+    metadata: isProductUuid(productId) ? {} : { static_product_id: productId },
+  });
+}
 
 interface FavoritesContextValue {
   favoriteProductIds: string[];
@@ -134,6 +149,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
           writeLocalFavorites(next);
           return next;
         });
+        trackFavorite("favorite_add", productId);
         return;
       }
 
@@ -162,6 +178,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
           throw new Error(upsertError.message);
         }
         setError(null);
+        trackFavorite("favorite_add", productId);
       } finally {
         pendingIdsRef.current.delete(productId);
       }
@@ -180,6 +197,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
           writeLocalFavorites(next);
           return next;
         });
+        trackFavorite("favorite_remove", productId);
         return;
       }
 
@@ -207,6 +225,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
           throw new Error(deleteError.message);
         }
         setError(null);
+        trackFavorite("favorite_remove", productId);
       } finally {
         pendingIdsRef.current.delete(productId);
       }

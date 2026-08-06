@@ -88,6 +88,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    // Shared-computer boundary: rotate visitor so the next account cannot
+    // link/inherit this browser's prior anonymous or linked history.
+    try {
+      const { rotateAnalyticsIdentity } = await import(
+        "@/lib/analytics/identity"
+      );
+      const { resetAnalyticsClientState } = await import(
+        "@/lib/analytics/track"
+      );
+      rotateAnalyticsIdentity();
+      resetAnalyticsClientState();
+    } catch {
+      /* analytics optional */
+    }
   }, []);
 
   const value = useMemo<AuthContextValue>(

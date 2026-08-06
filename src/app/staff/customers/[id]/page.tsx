@@ -19,6 +19,7 @@ import {
   CUSTOMER_TYPE_LABELS,
   ORDER_STATUS_LABELS,
 } from "@/types/database";
+import { StaffCustomerActivity } from "@/components/staff/StaffCustomerActivity";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -65,6 +66,7 @@ export default function StaffCustomerDetailPage() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"info" | "activity">("info");
 
   useEffect(() => {
     if (!customerId) {
@@ -247,6 +249,37 @@ export default function StaffCustomerDetailPage() {
         </div>
       </div>
 
+      <div className="flex gap-1 border-b border-neutral-200">
+        <button
+          type="button"
+          onClick={() => setTab("info")}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors ${focusRing} ${
+            tab === "info"
+              ? "border-b-2 border-[#0F766E] text-[#0F766E]"
+              : "text-neutral-500 hover:text-neutral-800"
+          }`}
+        >
+          Карточка
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("activity")}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors ${focusRing} ${
+            tab === "activity"
+              ? "border-b-2 border-[#0F766E] text-[#0F766E]"
+              : "text-neutral-500 hover:text-neutral-800"
+          }`}
+        >
+          Активность
+        </button>
+      </div>
+
+      {tab === "activity" ? (
+        <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <StaffCustomerActivity customerId={customer.id} />
+        </section>
+      ) : (
+        <>
       {editing ? (
         <form
           onSubmit={handleSave}
@@ -522,6 +555,8 @@ export default function StaffCustomerDetailPage() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

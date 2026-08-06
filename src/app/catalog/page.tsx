@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import { useCatalog } from "@/context/CatalogContext";
+import { trackEvent } from "@/lib/analytics/track";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -20,6 +21,9 @@ export default function CatalogPage() {
   const { refreshCatalog } = catalog;
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSearch = useRef<string>("");
+  const lastCategory = useRef<string | null>(null);
 
   // CatalogProvider (root layout) loads the catalog once per signed-in
   // identity and never refetches on its own — stock/availability otherwise
@@ -32,6 +36,40 @@ export default function CatalogPage() {
     void refreshCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const normalized = query.trim();
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+    }
+    if (normalized.length < 2) {
+      return;
+    }
+    searchTimer.current = setTimeout(() => {
+      if (lastSearch.current === normalized) return;
+      lastSearch.current = normalized;
+      trackEvent({
+        event_type: "search",
+        metadata: { query: normalized.slice(0, 200) },
+      });
+    }, 600);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [query]);
+
+  useEffect(() => {
+    if (category === null) {
+      lastCategory.current = null;
+      return;
+    }
+    if (lastCategory.current === category) return;
+    lastCategory.current = category;
+    trackEvent({
+      event_type: "category_open",
+      metadata: { category_name: category },
+    });
+  }, [category]);
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();

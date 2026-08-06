@@ -20,6 +20,7 @@ import {
 } from "@/lib/orders";
 import type { OrderDetail } from "@/lib/orders";
 import { formatPrice } from "@/lib/formatPrice";
+import { flushAnalytics, recordOrderEvent } from "@/lib/analytics/track";
 import type { ClientOrderStatusHistoryEntry } from "@/types/database";
 import { CLIENT_ORDER_STATUS_LABELS } from "@/types/database";
 
@@ -144,6 +145,8 @@ export default function OrderDetailPage() {
 
     try {
       await cancelOrder(order.id);
+      await recordOrderEvent(order.id, "order_cancelled");
+      await flushAnalytics();
       const refreshed = await getOrder(orderId);
       setOrder(refreshed);
       setNotFound(refreshed === null);

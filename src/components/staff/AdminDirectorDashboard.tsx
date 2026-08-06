@@ -29,6 +29,7 @@ import {
   type DashboardTopProduct,
   type PeriodPreset,
 } from "@/lib/staff/dashboard";
+import { StaffTrafficDashboardBlock } from "@/components/staff/StaffTrafficDashboardBlock";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -559,6 +560,8 @@ export default function AdminDirectorDashboard() {
           </div>
         )}
       </div>
+
+      <StaffTrafficDashboardBlock />
 
       {/* KPI */}
       <section>

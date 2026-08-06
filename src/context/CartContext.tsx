@@ -3,6 +3,33 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Product } from "@/types/product";
+import { trackEvent } from "@/lib/analytics/track";
+
+function isProductUuid(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    id,
+  );
+}
+
+function trackCartAdd(product: Product, quantity: number): void {
+  trackEvent({
+    event_type: "cart_add",
+    product_id: isProductUuid(product.id) ? product.id : null,
+    metadata: {
+      quantity,
+      sku: product.sku,
+      ...(isProductUuid(product.id) ? {} : { static_product_id: product.id }),
+    },
+  });
+}
+
+function trackCartRemove(productId: string): void {
+  trackEvent({
+    event_type: "cart_remove",
+    product_id: isProductUuid(productId) ? productId : null,
+    metadata: isProductUuid(productId) ? {} : { static_product_id: productId },
+  });
+}
 
 export interface CartItem {
   product: Product;
@@ -48,6 +75,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
       return [...current, { product, quantity }];
     });
+    trackCartAdd(product, quantity);
   }, []);
 
   // Merges a batch of entries into the cart with a single setItems() call,
@@ -56,35 +84,36 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // the input or already present in the cart) have their quantities summed;
   // entries with quantity <= 0 are ignored, same as addToCart().
   const addManyToCart = useCallback((entries: CartBulkEntry[]) => {
+    const additionalQuantityByProductId = new Map<string, number>();
+    const productById = new Map<string, Product>();
+
+    for (const entry of entries) {
+      if (entry.quantity <= 0) {
+        continue;
+      }
+      additionalQuantityByProductId.set(
+        entry.product.id,
+        (additionalQuantityByProductId.get(entry.product.id) ?? 0) + entry.quantity,
+      );
+      productById.set(entry.product.id, entry.product);
+    }
+
+    if (additionalQuantityByProductId.size === 0) {
+      return;
+    }
+
     setItems((current) => {
-      const additionalQuantityByProductId = new Map<string, number>();
-      const productById = new Map<string, Product>();
-
-      for (const entry of entries) {
-        if (entry.quantity <= 0) {
-          continue;
-        }
-        additionalQuantityByProductId.set(
-          entry.product.id,
-          (additionalQuantityByProductId.get(entry.product.id) ?? 0) + entry.quantity,
-        );
-        productById.set(entry.product.id, entry.product);
-      }
-
-      if (additionalQuantityByProductId.size === 0) {
-        return current;
-      }
-
+      const remaining = new Map(additionalQuantityByProductId);
       const next = current.map((item) => {
-        const additionalQuantity = additionalQuantityByProductId.get(item.product.id);
+        const additionalQuantity = remaining.get(item.product.id);
         if (additionalQuantity === undefined) {
           return item;
         }
-        additionalQuantityByProductId.delete(item.product.id);
+        remaining.delete(item.product.id);
         return { ...item, quantity: item.quantity + additionalQuantity };
       });
 
-      for (const [productId, quantity] of additionalQuantityByProductId) {
+      for (const [productId, quantity] of remaining) {
         const product = productById.get(productId);
         if (product) {
           next.push({ product, quantity });
@@ -93,6 +122,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       return next;
     });
+
+    for (const [productId, quantity] of additionalQuantityByProductId) {
+      const product = productById.get(productId);
+      if (product) {
+        trackCartAdd(product, quantity);
+      }
+    }
   }, []);
 
   const increaseQuantity = useCallback((productId: string) => {
@@ -127,6 +163,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const removeItem = useCallback((productId: string) => {
     setItems((current) => current.filter((item) => item.product.id !== productId));
+    trackCartRemove(productId);
   }, []);
 
   const clearCart = useCallback(() => {

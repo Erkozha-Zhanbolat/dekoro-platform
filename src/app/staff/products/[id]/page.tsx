@@ -34,6 +34,7 @@ import {
   canReadProducts,
   type StaffProductStatus,
 } from "@/types/database";
+import { StaffProductAnalytics } from "@/components/staff/StaffProductAnalytics";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -656,6 +657,10 @@ export default function StaffProductDetailPage() {
           </button>
         )}
       </form>
+
+      <div className="mt-6">
+        <StaffProductAnalytics productId={productId} />
+      </div>
 
       <section className="mt-6 flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">

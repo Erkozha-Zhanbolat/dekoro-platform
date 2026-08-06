@@ -13,6 +13,7 @@ import { FULFILLMENT_LABELS } from "@/lib/fulfillment";
 import type { FulfillmentType } from "@/lib/fulfillment";
 import { OrderSummaryPanel } from "@/components/OrderSummaryPanel";
 import { createOrder } from "@/lib/orders";
+import { flushAnalytics, recordOrderEvent } from "@/lib/analytics/track";
 import type { Company, CreateOrderItemInput, Profile } from "@/types/database";
 
 const focusRing =
@@ -229,6 +230,10 @@ function CheckoutForm({
         deliveryComment: form.pickupComment,
         comment: form.comment,
       });
+
+      // Authoritative: server validates order ownership before recording.
+      await recordOrderEvent(result.id, "order_created");
+      await flushAnalytics();
 
       clearCart();
 

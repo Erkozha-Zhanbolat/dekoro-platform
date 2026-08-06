@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import type { FormEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getSafeNextPath, isSafeNextPath } from "@/lib/safeNextPath";
+import { flushAnalytics, linkVisitorToProfile, recordAuthEvent } from "@/lib/analytics/track";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -39,6 +40,11 @@ function LoginForm() {
       setError("Неверный email или пароль");
       return;
     }
+
+    // Authoritative login event + link (never trust client trackEvent for login).
+    await linkVisitorToProfile();
+    await recordAuthEvent("login");
+    await flushAnalytics();
 
     router.replace(nextPath);
   }
