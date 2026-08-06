@@ -73,9 +73,17 @@ function escapeIlikeValue(value: string): string {
   return value.replace(/[%_]/g, (match) => `\\${match}`);
 }
 
+export type StaffOrdersOpsFilter =
+  | "fully_paid_not_moved"
+  | "payment_overdue"
+  | "reservation_overdue"
+  | "unassigned";
+
 export type StaffOrdersQuery = {
   search?: string;
   status?: OrderStatus | "all";
+  /** Server-side / query-side operational filters from dashboard deep-links. */
+  ops?: StaffOrdersOpsFilter | null;
   limit?: number;
 };
 
@@ -94,6 +102,28 @@ export async function getStaffOrders(
 
   if (query.status && query.status !== "all") {
     request = request.eq("status", query.status);
+  }
+
+  if (query.ops === "unassigned") {
+    request = request.is("assigned_manager_id", null).neq("status", "completed");
+  }
+
+  if (query.ops === "payment_overdue") {
+    request = request
+      .not("payment_due_at", "is", null)
+      .lt("payment_due_at", new Date().toISOString())
+      .neq("status", "cancelled");
+  }
+
+  if (query.ops === "reservation_overdue") {
+    request = request
+      .not("reservation_expires_at", "is", null)
+      .lt("reservation_expires_at", new Date().toISOString())
+      .not("status", "in", '("shipped","completed","cancelled")');
+  }
+
+  if (query.ops === "fully_paid_not_moved") {
+    request = request.eq("status", "awaiting_payment");
   }
 
   const search = query.search?.trim();

@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useProfile } from "@/context/ProfileContext";
+import AdminDirectorDashboard from "@/components/staff/AdminDirectorDashboard";
 import { formatPrice } from "@/lib/formatPrice";
 import { ORDER_STATUS_LABELS } from "@/types/database";
 import {
@@ -24,7 +26,7 @@ const STAT_CARDS: { key: keyof StaffOrderStats; label: string }[] = [
   { key: "cancelled", label: "Отменённые" },
 ];
 
-export default function StaffDashboardPage() {
+function StaffOrdersHome() {
   const [stats, setStats] = useState<StaffOrderStats | null>(null);
   const [recentOrders, setRecentOrders] = useState<StaffOrderListItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -153,4 +155,14 @@ export default function StaffDashboardPage() {
       </div>
     </div>
   );
+}
+
+export default function StaffDashboardPage() {
+  const { profile } = useProfile();
+
+  if (profile?.role === "admin") {
+    return <AdminDirectorDashboard />;
+  }
+
+  return <StaffOrdersHome />;
 }

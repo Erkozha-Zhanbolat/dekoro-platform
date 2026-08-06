@@ -1,17 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatPrice } from "@/lib/formatPrice";
 import {
   ORDER_PAYMENT_STATUS_LABELS,
   ORDER_STATUS_LABELS,
+  ORDER_WORKFLOW_STATUSES,
   STAFF_PAYMENT_FILTER_OPTIONS,
   canAccessOrderPayments,
 } from "@/types/database";
 import type { OrderStatus, StaffPaymentListFilter } from "@/types/database";
-import { getStaffOrders, STAFF_STATUS_FILTER_OPTIONS } from "@/lib/staff/orders";
-import type { StaffOrderListItem } from "@/lib/staff/orders";
+import {
+  getStaffOrders,
+  STAFF_STATUS_FILTER_OPTIONS,
+} from "@/lib/staff/orders";
+import type { StaffOrderListItem, StaffOrdersOpsFilter } from "@/lib/staff/orders";
 import { listStaffOrdersPaymentSummaries } from "@/lib/staff/payments";
 import type { StaffOrderPaymentListSummary } from "@/types/database";
 import { useProfile } from "@/context/ProfileContext";
@@ -24,26 +29,83 @@ const STATUS_FILTERS = STAFF_STATUS_FILTER_OPTIONS;
 const ORDERS_LIST_LIMIT = 100;
 const SEARCH_DEBOUNCE_MS = 300;
 
+const VALID_STATUSES = new Set<string>([
+  ...ORDER_WORKFLOW_STATUSES,
+  "cancelled",
+]);
+
+const VALID_PAYMENT_FILTERS = new Set<string>(
+  STAFF_PAYMENT_FILTER_OPTIONS.map((option) => option.value),
+);
+
+const VALID_OPS = new Set<StaffOrdersOpsFilter>([
+  "fully_paid_not_moved",
+  "payment_overdue",
+  "reservation_overdue",
+  "unassigned",
+]);
+
+function parseOps(value: string | null): StaffOrdersOpsFilter | null {
+  if (!value) return null;
+  return VALID_OPS.has(value as StaffOrdersOpsFilter)
+    ? (value as StaffOrdersOpsFilter)
+    : null;
+}
+
 export default function StaffOrdersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="rounded-lg border border-neutral-200 bg-white py-12 text-center text-sm text-neutral-500">
+          Загрузка заказов...
+        </div>
+      }
+    >
+      <StaffOrdersPageFromUrl />
+    </Suspense>
+  );
+}
+
+function StaffOrdersPageFromUrl() {
+  const searchParams = useSearchParams();
+  return <StaffOrdersPageContent key={searchParams.toString()} searchParams={searchParams} />;
+}
+
+function StaffOrdersPageContent({
+  searchParams,
+}: {
+  searchParams: ReturnType<typeof useSearchParams>;
+}) {
   const { profile } = useProfile();
   const canCreateOrder = profile?.role === "manager" || profile?.role === "admin";
   const canSeePayments = canAccessOrderPayments(profile?.role);
 
+  const urlOps = parseOps(searchParams.get("ops"));
+  const urlStatusRaw = searchParams.get("status");
+  const urlStatus =
+    !urlOps && urlStatusRaw && VALID_STATUSES.has(urlStatusRaw)
+      ? (urlStatusRaw as OrderStatus)
+      : "all";
+  const urlPaymentRaw = searchParams.get("payment");
+  const urlPayment =
+    urlPaymentRaw && VALID_PAYMENT_FILTERS.has(urlPaymentRaw)
+      ? (urlPaymentRaw as StaffPaymentListFilter)
+      : "all";
+
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
-  const [paymentFilter, setPaymentFilter] = useState<StaffPaymentListFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">(urlStatus);
+  const [paymentFilter, setPaymentFilter] = useState<StaffPaymentListFilter>(urlPayment);
+  const [opsFilter, setOpsFilter] = useState<StaffOrdersOpsFilter | null>(urlOps);
 
   const [orders, setOrders] = useState<StaffOrderListItem[]>([]);
   const [paymentByOrderId, setPaymentByOrderId] = useState<
     Record<string, StaffOrderPaymentListSummary>
   >({});
   const [loadError, setLoadError] = useState<string | null>(null);
-  // undefined = not loaded yet for this key ("<search>:<status>:<reloadToken>").
   const [loadedKey, setLoadedKey] = useState<string | undefined>(undefined);
   const [reloadToken, setReloadToken] = useState(0);
 
-  // Debounce free-text search so every keystroke doesn't trigger a request.
   useEffect(() => {
     const timeout = setTimeout(() => {
       setDebouncedSearch(searchInput.trim());
@@ -51,7 +113,7 @@ export default function StaffOrdersPage() {
     return () => clearTimeout(timeout);
   }, [searchInput]);
 
-  const currentKey = `${debouncedSearch}:${statusFilter}:${reloadToken}:${canSeePayments ? "pay" : "nopay"}`;
+  const currentKey = `${debouncedSearch}:${statusFilter}:${opsFilter ?? ""}:${reloadToken}:${canSeePayments ? "pay" : "nopay"}`;
 
   useEffect(() => {
     if (loadedKey === currentKey) {
@@ -60,7 +122,12 @@ export default function StaffOrdersPage() {
 
     let ignore = false;
 
-    getStaffOrders({ search: debouncedSearch, status: statusFilter, limit: ORDERS_LIST_LIMIT })
+    getStaffOrders({
+      search: debouncedSearch,
+      status: statusFilter,
+      ops: opsFilter,
+      limit: ORDERS_LIST_LIMIT,
+    })
       .then(async (result) => {
         if (ignore) {
           return;
@@ -110,15 +177,35 @@ export default function StaffOrdersPage() {
     return () => {
       ignore = true;
     };
-  }, [debouncedSearch, statusFilter, currentKey, loadedKey, canSeePayments]);
+  }, [debouncedSearch, statusFilter, opsFilter, currentKey, loadedKey, canSeePayments]);
 
   const loading = loadedKey !== currentKey;
 
   const visibleOrders = useMemo(() => {
-    if (!canSeePayments || paymentFilter === "all") {
-      return orders;
+    let list = orders;
+
+    if (opsFilter === "fully_paid_not_moved" && canSeePayments) {
+      list = list.filter((order) => {
+        const summary = paymentByOrderId[order.id];
+        return (
+          summary != null &&
+          (summary.payment_status === "paid" || summary.payment_status === "overpaid")
+        );
+      });
     }
-    return orders.filter((order) => {
+
+    if (opsFilter === "payment_overdue" && canSeePayments) {
+      list = list.filter((order) => {
+        const summary = paymentByOrderId[order.id];
+        return summary != null && summary.amount_remaining > 0.01;
+      });
+    }
+
+    if (!canSeePayments || paymentFilter === "all") {
+      return list;
+    }
+
+    return list.filter((order) => {
       const summary = paymentByOrderId[order.id];
       if (!summary) {
         return false;
@@ -128,7 +215,18 @@ export default function StaffOrdersPage() {
       }
       return summary.payment_status === paymentFilter;
     });
-  }, [orders, paymentByOrderId, paymentFilter, canSeePayments]);
+  }, [orders, paymentByOrderId, paymentFilter, canSeePayments, opsFilter]);
+
+  const opsLabel =
+    opsFilter === "fully_paid_not_moved"
+      ? "Оплачены, но статус не сменён"
+      : opsFilter === "payment_overdue"
+        ? "Просрочен срок оплаты"
+        : opsFilter === "reservation_overdue"
+          ? "Просрочен срок резерва"
+          : opsFilter === "unassigned"
+            ? "Без менеджера"
+            : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -147,6 +245,19 @@ export default function StaffOrdersPage() {
         )}
       </div>
 
+      {opsLabel && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+          <span>Фильтр dashboard: {opsLabel}</span>
+          <button
+            type="button"
+            onClick={() => setOpsFilter(null)}
+            className={`font-medium underline ${focusRing}`}
+          >
+            Сбросить
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
         <input
           type="search"
@@ -157,7 +268,10 @@ export default function StaffOrdersPage() {
         />
         <select
           value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value as OrderStatus | "all")}
+          onChange={(event) => {
+            setOpsFilter(null);
+            setStatusFilter(event.target.value as OrderStatus | "all");
+          }}
           className={`w-full rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-800 outline-none transition-colors focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] sm:w-56 ${focusRing}`}
         >
           {STATUS_FILTERS.map((option) => (
@@ -216,7 +330,6 @@ export default function StaffOrdersPage() {
             </p>
           )}
 
-          {/* Desktop table */}
           <div className="hidden overflow-x-auto rounded-lg border border-neutral-200 bg-white md:block">
             <table className="w-full text-sm">
               <thead>
@@ -296,7 +409,6 @@ export default function StaffOrdersPage() {
             </table>
           </div>
 
-          {/* Mobile cards */}
           <div className="flex flex-col gap-3 md:hidden">
             {visibleOrders.map((order) => {
               const pay = paymentByOrderId[order.id];
