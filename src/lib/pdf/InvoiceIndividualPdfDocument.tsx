@@ -186,7 +186,8 @@ export function InvoiceIndividualPdfDocument({ document, images }: Props) {
   const beneficiaryId = str(payment ? payment.bin_iin : supplier.bin);
 
   const buyerName = str(buyer.display_name ?? buyer.legal_name);
-  const buyerIin = str(buyer.iin ?? buyer.iin_bin, "");
+  const buyerPhone = str(buyer.phone, "");
+  const buyerEmail = str(buyer.email, "");
 
   return (
     <Document
@@ -227,11 +228,13 @@ export function InvoiceIndividualPdfDocument({ document, images }: Props) {
           </View>
           <View style={styles.col}>
             <Text style={styles.sectionTitle}>Покупатель</Text>
-            <Text style={styles.line}>{buyerName}</Text>
-            {buyerIin ? <Text style={styles.line}>ИИН {buyerIin}</Text> : null}
-            <Text style={styles.line}>{str(buyer.address)}</Text>
-            <Text style={styles.line}>тел. {str(buyer.phone)}</Text>
-            {buyer.email ? <Text style={styles.line}>{str(buyer.email)}</Text> : null}
+            {buyerName !== "—" ? (
+              <Text style={styles.line}>{buyerName}</Text>
+            ) : null}
+            {buyerPhone ? (
+              <Text style={styles.line}>тел. {buyerPhone}</Text>
+            ) : null}
+            {buyerEmail ? <Text style={styles.line}>{buyerEmail}</Text> : null}
           </View>
         </View>
 

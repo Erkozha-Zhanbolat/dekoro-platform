@@ -212,6 +212,13 @@ export function InvoiceCompanyPdfDocument({ document, images }: Props) {
   const amountWords =
     str(totals.amount_in_words, "") || amountInWordsKzt(finalTotal);
 
+  const buyerCompany = str(buyer.legal_name ?? buyer.display_name, "");
+  const buyerBin = str(buyer.bin ?? buyer.iin_bin, "");
+  const buyerContact = str(buyer.contact_person, "");
+  const buyerAddress = str(buyer.address, "");
+  const buyerPhone = str(buyer.phone, "");
+  const buyerEmail = str(buyer.email, "");
+
   return (
     <Document
       title={`Счёт ${documentNumber}`}
@@ -273,10 +280,22 @@ export function InvoiceCompanyPdfDocument({ document, images }: Props) {
             {str(supplier.address)}
           </Text>
           <Text style={styles.partyLine}>
-            <Text style={styles.partyLabel}>Покупатель: </Text>
-            БИН/ИИН {str(buyer.bin ?? buyer.iin_bin)},{" "}
-            {str(buyer.legal_name ?? buyer.display_name)}, {str(buyer.address)}
+            <Text style={styles.partyLabel}>Покупатель:</Text>
           </Text>
+          {buyerCompany ? (
+            <Text style={styles.partyLine}>{buyerCompany}</Text>
+          ) : null}
+          {buyerBin ? <Text style={styles.partyLine}>БИН {buyerBin}</Text> : null}
+          {buyerContact ? (
+            <Text style={styles.partyLine}>Контактное лицо: {buyerContact}</Text>
+          ) : null}
+          {buyerAddress ? (
+            <Text style={styles.partyLine}>{buyerAddress}</Text>
+          ) : null}
+          {buyerPhone ? (
+            <Text style={styles.partyLine}>тел. {buyerPhone}</Text>
+          ) : null}
+          {buyerEmail ? <Text style={styles.partyLine}>{buyerEmail}</Text> : null}
           <Text style={styles.partyLine}>
             <Text style={styles.partyLabel}>Договор: </Text>
             {contractLabel}

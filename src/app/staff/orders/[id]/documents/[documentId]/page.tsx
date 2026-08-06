@@ -243,46 +243,86 @@ export default function StaffDocumentViewPage() {
       <section className="mt-4 rounded-lg border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-semibold text-neutral-800">Покупатель</h2>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-neutral-400">
-              {String(buyer.customer_type ?? "") === "individual"
-                ? "ФИО"
-                : "Название"}
-            </dt>
-            <dd className="text-neutral-800">
-              {String(
-                buyer.customer_type === "individual"
-                  ? (buyer.display_name ?? buyer.legal_name ?? "—")
-                  : (buyer.legal_name ?? buyer.display_name ?? "—"),
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-neutral-400">
-              {String(buyer.customer_type ?? "") === "individual"
-                ? "ИИН"
-                : String(buyer.customer_type ?? "") === "company"
-                  ? "БИН"
-                  : "ИИН/БИН"}
-            </dt>
-            <dd className="text-neutral-800">
-              {String(
-                buyer.bin ?? buyer.iin ?? buyer.iin_bin ?? "—",
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-neutral-400">Контакт</dt>
-            <dd className="text-neutral-800">{String(buyer.contact_person ?? "—")}</dd>
-          </div>
-          <div>
-            <dt className="text-neutral-400">Телефон</dt>
-            <dd className="text-neutral-800">{String(buyer.phone ?? "—")}</dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-neutral-400">Адрес</dt>
-            <dd className="text-neutral-800">{String(buyer.address ?? "—")}</dd>
-          </div>
+          {String(buyer.customer_type ?? "") === "individual" ? (
+            <>
+              <div>
+                <dt className="text-neutral-400">ФИО</dt>
+                <dd className="text-neutral-800">
+                  {String(buyer.display_name ?? buyer.legal_name ?? "—")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Телефон</dt>
+                <dd className="text-neutral-800">{String(buyer.phone ?? "—")}</dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Email</dt>
+                <dd className="text-neutral-800">{String(buyer.email ?? "—")}</dd>
+              </div>
+            </>
+          ) : String(buyer.customer_type ?? "") === "company" ? (
+            <>
+              <div>
+                <dt className="text-neutral-400">Компания</dt>
+                <dd className="text-neutral-800">
+                  {String(buyer.legal_name ?? buyer.display_name ?? "—")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">БИН</dt>
+                <dd className="text-neutral-800">
+                  {String(buyer.bin ?? buyer.iin_bin ?? "—")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Контактное лицо</dt>
+                <dd className="text-neutral-800">
+                  {String(buyer.contact_person ?? "—")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Телефон</dt>
+                <dd className="text-neutral-800">{String(buyer.phone ?? "—")}</dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Email</dt>
+                <dd className="text-neutral-800">{String(buyer.email ?? "—")}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-neutral-400">Юридический адрес</dt>
+                <dd className="text-neutral-800">{String(buyer.address ?? "—")}</dd>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <dt className="text-neutral-400">Название</dt>
+                <dd className="text-neutral-800">
+                  {String(buyer.legal_name ?? buyer.display_name ?? "—")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">ИИН/БИН</dt>
+                <dd className="text-neutral-800">
+                  {String(buyer.bin ?? buyer.iin ?? buyer.iin_bin ?? "—")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Контакт</dt>
+                <dd className="text-neutral-800">
+                  {String(buyer.contact_person ?? "—")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Телефон</dt>
+                <dd className="text-neutral-800">{String(buyer.phone ?? "—")}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-neutral-400">Адрес</dt>
+                <dd className="text-neutral-800">{String(buyer.address ?? "—")}</dd>
+              </div>
+            </>
+          )}
         </dl>
       </section>
 
