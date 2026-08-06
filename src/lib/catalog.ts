@@ -2,9 +2,17 @@ import { supabase } from "@/lib/supabase/client";
 import { PRODUCT_CATEGORIES } from "@/types/product";
 import type { Product, ProductCategory } from "@/types/product";
 
+/** Fixed bucket from migrations 019/020 — never accept arbitrary bucket names. */
+const PRODUCT_IMAGES_BUCKET = "product-images";
+
 /**
- * Row shape returned by public.get_catalog().
- * Mirrors supabase/migrations/002_catalog_inventory_pricing.sql.
+ * Row shape returned by public.get_catalog()
+ * (002 + 020_product_inventory_and_catalog_images.sql).
+ *
+ * `image` is either:
+ * - Storage path `products/{uuid}/main.{ext}` from products.main_photo_path, or
+ * - legacy absolute URL from product_images.image_url.
+ * `updated_at` is used for cache-busting when the Storage path is overwritten.
  */
 export type CatalogProduct = {
   product_id: string;
@@ -18,9 +26,76 @@ export type CatalogProduct = {
   sale_price: number | null;
   image: string | null;
   is_promotion: boolean;
+  updated_at: string;
 };
 
 const KNOWN_CATEGORIES: readonly string[] = PRODUCT_CATEGORIES;
+
+/** Relative path only — never a full URL or foreign bucket prefix. */
+const PRODUCT_PHOTO_PATH_RE =
+  /^products\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/main\.(png|jpe?g|webp)$/i;
+
+function cacheBustToken(cacheBust?: string | number | null): string | null {
+  if (cacheBust === null || cacheBust === undefined) return null;
+  const raw = String(cacheBust).trim();
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  if (Number.isFinite(ms)) return String(ms);
+  return encodeURIComponent(raw);
+}
+
+/**
+ * Resolve catalog image to a browser-usable URL without a Storage round-trip.
+ *
+ * - http(s)://… → return as-is (legacy product_images.image_url)
+ * - products/{uuid}/main.ext → public URL for bucket product-images only
+ * - null / empty / invalid → null (UI shows placeholder)
+ * - never wraps an already-absolute URL again
+ * - never accepts arbitrary bucket names
+ */
+export function resolveCatalogImageUrl(
+  image: string | null | undefined,
+  cacheBust?: string | number | null,
+): string | null {
+  if (image == null) return null;
+  const trimmed = image.trim();
+  if (!trimmed) return null;
+
+  // Legacy absolute URL — do not pass through getPublicUrl (would double-wrap).
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Reject mistaken prefixes (bucket name, storage API paths, etc.).
+  if (
+    trimmed.startsWith("product-images/")
+    || trimmed.startsWith("/storage/")
+    || trimmed.includes("://")
+  ) {
+    return null;
+  }
+
+  if (!PRODUCT_PHOTO_PATH_RE.test(trimmed)) {
+    return null;
+  }
+
+  const { data } = supabase.storage
+    .from(PRODUCT_IMAGES_BUCKET)
+    .getPublicUrl(trimmed);
+
+  const publicUrl = data?.publicUrl;
+  if (!publicUrl || !/^https?:\/\//i.test(publicUrl)) {
+    return null;
+  }
+
+  const token = cacheBustToken(cacheBust);
+  if (!token) {
+    return publicUrl;
+  }
+
+  const sep = publicUrl.includes("?") ? "&" : "?";
+  return `${publicUrl}${sep}v=${token}`;
+}
 
 /**
  * Fetches the storefront catalog via Supabase RPC.
@@ -60,7 +135,7 @@ export function mapCatalogProductToProduct(entry: CatalogProduct): Product {
     salePrice: entry.sale_price === null || entry.sale_price === undefined
       ? null
       : Number(entry.sale_price),
-    image: entry.image,
+    image: resolveCatalogImageUrl(entry.image, entry.updated_at),
     isPromotion: Boolean(entry.is_promotion),
   };
 }

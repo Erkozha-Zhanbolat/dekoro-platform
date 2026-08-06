@@ -271,6 +271,47 @@ export function canReadProducts(role: UserRole | null | undefined): boolean {
   return role === "admin" || role === "manager" || role === "warehouse";
 }
 
+/**
+ * Row from public.staff_get_product_inventory / staff_adjust_product_inventory.
+ * Quantities are numeric(14,3) in DB — keep as JS number (no integer truncation).
+ */
+export type StaffProductInventory = {
+  inventory_id: string | null;
+  product_id: string;
+  warehouse_id: string;
+  warehouse_code: string;
+  quantity: number;
+  reserved_quantity: number;
+  available_quantity: number;
+};
+
+export type StaffProductInventoryAdjustResult = StaffProductInventory & {
+  adjusted: boolean;
+};
+
+/** Row from public.staff_list_product_inventory_adjustments (numeric quantities). */
+export type StaffInventoryAdjustment = {
+  id: string;
+  inventory_id: string;
+  product_id: string;
+  warehouse_id: string;
+  previous_quantity: number;
+  new_quantity: number;
+  difference: number;
+  reason: string;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+};
+
+export const INVENTORY_ADJUSTMENT_REASON_PRESETS = [
+  "Начальный остаток",
+  "Приход товара",
+  "Инвентаризация",
+  "Исправление ошибки",
+  "Списание брака",
+] as const;
+
 export interface ProductImage {
   id: string;
   product_id: string;
@@ -513,7 +554,8 @@ export type CreateOrderResult = {
   created_at: string;
 };
 
-// Row shape returned by the get_catalog() RPC (supabase/migrations/002_catalog_inventory_pricing.sql).
+// Row shape returned by the get_catalog() RPC
+// (002_catalog_inventory_pricing.sql, extended in 020 with updated_at).
 export interface CatalogEntry {
   product_id: string;
   name: string;

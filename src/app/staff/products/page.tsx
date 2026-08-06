@@ -387,6 +387,7 @@ export default function StaffProductsPage() {
                     <StaffProductPhotoThumb
                       path={product.main_photo_path}
                       alt={product.name}
+                      cacheBust={product.updated_at}
                       className="h-12 w-12 rounded-md"
                     />
                   </td>

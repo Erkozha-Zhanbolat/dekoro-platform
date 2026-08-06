@@ -21,6 +21,14 @@ import {
   type StaffProductWriteInput,
 } from "@/lib/staff/products";
 import {
+  adjustStaffProductInventory,
+  getStaffProductInventory,
+  listStaffProductInventoryAdjustments,
+  type StaffInventoryAdjustment,
+  type StaffProductInventory,
+} from "@/lib/staff/productInventory";
+import {
+  INVENTORY_ADJUSTMENT_REASON_PRESETS,
   STAFF_PRODUCT_STATUS_LABELS,
   canManageProducts,
   canReadProducts,
@@ -84,6 +92,16 @@ export default function StaffProductDetailPage() {
   const [copyBusy, setCopyBusy] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
 
+  const [inventory, setInventory] = useState<StaffProductInventory | null>(null);
+  const [adjustments, setAdjustments] = useState<StaffInventoryAdjustment[]>([]);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [newQuantity, setNewQuantity] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [adjustBusy, setAdjustBusy] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+  const [adjustInfo, setAdjustInfo] = useState<string | null>(null);
+
   useEffect(() => {
     if (!profileLoading && profile && !canRead) {
       router.replace("/staff");
@@ -112,11 +130,19 @@ export default function StaffProductDetailPage() {
 
     let ignore = false;
 
-    Promise.all([getStaffProduct(productId), listStaffCategories(true)])
-      .then(([row, cats]) => {
+    Promise.all([
+      getStaffProduct(productId),
+      listStaffCategories(true),
+      getStaffProductInventory(productId),
+      listStaffProductInventoryAdjustments(productId, 20),
+    ])
+      .then(([row, cats, inv, history]) => {
         if (ignore) return;
         applyProduct(row);
         setCategories(cats);
+        setInventory(inv);
+        setAdjustments(history);
+        setInventoryError(null);
         setLoadError(null);
         setLoadedKey(productId);
       })
@@ -225,6 +251,71 @@ export default function StaffProductDetailPage() {
     }
   }
 
+  async function refreshInventory() {
+    if (!productId) return;
+    const [inv, history] = await Promise.all([
+      getStaffProductInventory(productId),
+      listStaffProductInventoryAdjustments(productId, 20),
+    ]);
+    setInventory(inv);
+    setAdjustments(history);
+    setInventoryError(null);
+  }
+
+  async function handleAdjustInventory(event: React.FormEvent) {
+    event.preventDefault();
+    if (!product || !canManage || adjustBusy) return;
+
+    const qty = Number(newQuantity.trim().replace(",", "."));
+    if (!Number.isFinite(qty) || qty < 0) {
+      setAdjustError("Фактический остаток должен быть числом ≥ 0");
+      return;
+    }
+    if (!adjustReason.trim()) {
+      setAdjustError("Укажите причину корректировки");
+      return;
+    }
+    if (inventory && qty < inventory.reserved_quantity) {
+      setAdjustError(
+        `Фактический остаток не может быть меньше количества в резерве (${inventory.reserved_quantity})`,
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Изменить фактический остаток на ${qty}?\nПричина: ${adjustReason.trim()}`,
+    );
+    if (!confirmed) return;
+
+    setAdjustBusy(true);
+    setAdjustError(null);
+    setAdjustInfo(null);
+    try {
+      const result = await adjustStaffProductInventory({
+        productId: product.id,
+        newQuantity: qty,
+        reason: adjustReason.trim(),
+      });
+      setInventory(result);
+      if (!result.adjusted) {
+        setAdjustInfo("Количество не изменилось — запись корректировки не создана.");
+      } else {
+        setAdjustInfo("Остаток обновлён.");
+        setAdjustOpen(false);
+        setNewQuantity("");
+        setAdjustReason("");
+      }
+      const history = await listStaffProductInventoryAdjustments(product.id, 20);
+      setAdjustments(history);
+      const refreshed = await getStaffProduct(product.id);
+      applyProduct(refreshed);
+    } catch (error: unknown) {
+      setAdjustError(error instanceof Error ? error.message : "Не удалось изменить остаток");
+    } finally {
+      setAdjustBusy(false);
+    }
+  }
+
   async function handleCopy(event: React.FormEvent) {
     event.preventDefault();
     if (!product || !canManage || copyBusy) return;
@@ -300,8 +391,9 @@ export default function StaffProductDetailPage() {
       <h1 className="mt-4 text-2xl font-bold text-neutral-800">{product.name}</h1>
       <p className="mt-1 text-sm text-neutral-500">
         {product.sku}
-        {" · "}
-        остаток {product.available_quantity}
+        {inventory
+          ? ` · доступно ${inventory.available_quantity} (ALMATY-01)`
+          : ` · доступно ${product.available_quantity}`}
         {readOnly ? " · только просмотр" : ""}
       </p>
 
@@ -315,6 +407,7 @@ export default function StaffProductDetailPage() {
             <StaffProductPhotoThumb
               path={product.main_photo_path}
               alt={product.name}
+              cacheBust={product.updated_at}
               className="h-28 w-28 rounded-md"
             />
             {canManage && (
@@ -563,6 +656,185 @@ export default function StaffProductDetailPage() {
           </button>
         )}
       </form>
+
+      <section className="mt-6 flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              Остаток — ALMATY-01
+            </h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Фактический остаток не может быть меньше количества в резерве.
+            </p>
+          </div>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => {
+                setAdjustOpen((open) => !open);
+                setNewQuantity(inventory ? String(inventory.quantity) : "0");
+                setAdjustReason("");
+                setAdjustError(null);
+                setAdjustInfo(null);
+              }}
+              className={`rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
+            >
+              {adjustOpen ? "Скрыть форму" : "Изменить остаток"}
+            </button>
+          )}
+        </div>
+
+        {inventoryError && (
+          <p className="text-sm text-red-600" role="alert">
+            {inventoryError}
+          </p>
+        )}
+
+        {inventory ? (
+          <dl className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-md bg-neutral-50 px-3 py-2">
+              <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                Фактический остаток
+              </dt>
+              <dd className="mt-1 text-lg font-semibold text-neutral-800">
+                {inventory.quantity}
+              </dd>
+            </div>
+            <div className="rounded-md bg-neutral-50 px-3 py-2">
+              <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                В резерве
+              </dt>
+              <dd className="mt-1 text-lg font-semibold text-neutral-800">
+                {inventory.reserved_quantity}
+              </dd>
+            </div>
+            <div className="rounded-md bg-neutral-50 px-3 py-2">
+              <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                Доступно
+              </dt>
+              <dd className="mt-1 text-lg font-semibold text-neutral-800">
+                {inventory.available_quantity}
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="text-sm text-neutral-500">Остаток не загружен</p>
+        )}
+
+        {canManage && adjustOpen && (
+          <form
+            onSubmit={handleAdjustInventory}
+            className="flex flex-col gap-3 rounded-md border border-neutral-100 bg-neutral-50 p-4"
+          >
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Новое фактическое количество *
+              </span>
+              <input
+                required
+                inputMode="decimal"
+                value={newQuantity}
+                onChange={(e) => setNewQuantity(e.target.value)}
+                className={inputClass}
+                placeholder="115 или 115.5"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Причина *
+              </span>
+              <input
+                required
+                list="inventory-adjustment-reasons"
+                maxLength={500}
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                className={inputClass}
+                placeholder="Например: Начальный остаток"
+              />
+              <datalist id="inventory-adjustment-reasons">
+                {INVENTORY_ADJUSTMENT_REASON_PRESETS.map((reason) => (
+                  <option key={reason} value={reason} />
+                ))}
+              </datalist>
+            </label>
+            <p className="text-xs text-neutral-500">
+              Резерв ({inventory?.reserved_quantity ?? 0}) менять вручную нельзя.
+              Отгрузки заказов продолжают списывать остаток через workflow.
+            </p>
+            {adjustError && (
+              <p className="text-sm text-red-600" role="alert">
+                {adjustError}
+              </p>
+            )}
+            {adjustInfo && (
+              <p className="text-sm text-emerald-700">{adjustInfo}</p>
+            )}
+            <button
+              type="submit"
+              disabled={adjustBusy}
+              className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:opacity-60 ${focusRing}`}
+            >
+              {adjustBusy ? "Сохранение..." : "Подтвердить изменение"}
+            </button>
+          </form>
+        )}
+
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            История корректировок
+          </h3>
+          {adjustments.length === 0 ? (
+            <p className="mt-2 text-sm text-neutral-500">Пока нет корректировок</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-neutral-100">
+              {adjustments.map((row) => (
+                <li key={row.id} className="py-2 text-sm">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-medium text-neutral-800">
+                      {row.previous_quantity} → {row.new_quantity}
+                      <span
+                        className={
+                          row.difference > 0
+                            ? "ml-2 text-emerald-600"
+                            : row.difference < 0
+                              ? "ml-2 text-red-600"
+                              : "ml-2 text-neutral-500"
+                        }
+                      >
+                        ({row.difference > 0 ? "+" : ""}
+                        {row.difference})
+                      </span>
+                    </span>
+                    <span className="text-xs text-neutral-400">
+                      {new Date(row.created_at).toLocaleString("ru-RU")}
+                    </span>
+                  </div>
+                  <p className="text-neutral-600">{row.reason}</p>
+                  <p className="text-xs text-neutral-400">
+                    {row.created_by_name ?? "Сотрудник"}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {inventoryError === null && canRead && (
+            <button
+              type="button"
+              onClick={() => {
+                refreshInventory().catch((error: unknown) => {
+                  setInventoryError(
+                    error instanceof Error ? error.message : "Ошибка обновления остатка",
+                  );
+                });
+              }}
+              className={`mt-2 text-xs font-medium text-[#0F766E] ${focusRing}`}
+            >
+              Обновить остаток
+            </button>
+          )}
+        </div>
+      </section>
 
       {copyOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

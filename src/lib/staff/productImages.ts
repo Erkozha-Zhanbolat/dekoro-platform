@@ -47,6 +47,39 @@ function assertProductPhotoPath(path: string, productId?: string): void {
   }
 }
 
+/**
+ * Public URL for a product main photo path (bucket product-images is public
+ * after migration 020). Synchronous — no Storage round-trip / no N+1.
+ * Optional cacheBust (e.g. products.updated_at) forces browsers to refetch
+ * after an in-place overwrite of the same path.
+ */
+export function getProductMainPhotoPublicUrl(
+  path: string,
+  cacheBust?: string | number | null,
+): string {
+  const trimmed = path.trim();
+  assertProductPhotoPath(trimmed);
+
+  const { data } = supabase.storage
+    .from(PRODUCT_IMAGES_BUCKET)
+    .getPublicUrl(trimmed);
+
+  if (!data?.publicUrl) {
+    throw new Error("Не удалось получить публичный URL фото");
+  }
+
+  let url = data.publicUrl;
+  if (cacheBust != null && String(cacheBust).trim() !== "") {
+    const raw = String(cacheBust).trim();
+    const ms = Date.parse(raw);
+    const token = Number.isFinite(ms) ? String(ms) : encodeURIComponent(raw);
+    url = `${url}${url.includes("?") ? "&" : "?"}v=${token}`;
+  }
+
+  return url;
+}
+
+/** @deprecated Prefer getProductMainPhotoPublicUrl after migration 020. */
 export async function getProductMainPhotoSignedUrl(
   path: string,
   expiresInSeconds = 60 * 10,

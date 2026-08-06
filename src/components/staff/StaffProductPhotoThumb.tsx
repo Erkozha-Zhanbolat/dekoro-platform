@@ -1,44 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getProductMainPhotoSignedUrl } from "@/lib/staff/productImages";
+import { getProductMainPhotoPublicUrl } from "@/lib/staff/productImages";
 
 type Props = {
   path: string | null | undefined;
   alt: string;
   className?: string;
+  /** products.updated_at — busts cache after in-place photo replace. */
+  cacheBust?: string | null;
 };
 
-export function StaffProductPhotoThumb({ path, alt, className }: Props) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [resolvedFor, setResolvedFor] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    if (!path) {
-      return;
+export function StaffProductPhotoThumb({ path, alt, className, cacheBust }: Props) {
+  let url: string | null = null;
+  if (path) {
+    try {
+      url = getProductMainPhotoPublicUrl(path, cacheBust);
+    } catch {
+      url = null;
     }
+  }
 
-    let ignore = false;
-    getProductMainPhotoSignedUrl(path)
-      .then((signed) => {
-        if (!ignore) {
-          setUrl(signed);
-          setResolvedFor(path);
-        }
-      })
-      .catch(() => {
-        if (!ignore) {
-          setUrl(null);
-          setResolvedFor(path);
-        }
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, [path]);
-
-  if (!path || resolvedFor !== path || !url) {
+  if (!url) {
     return (
       <div
         className={`flex items-center justify-center bg-neutral-100 text-[10px] uppercase tracking-wide text-neutral-400 ${className ?? ""}`}
@@ -50,7 +32,7 @@ export function StaffProductPhotoThumb({ path, alt, className }: Props) {
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- signed Storage URLs are ephemeral
+    // eslint-disable-next-line @next/next/no-img-element -- public Storage URLs
     <img src={url} alt={alt} className={`object-cover ${className ?? ""}`} />
   );
 }

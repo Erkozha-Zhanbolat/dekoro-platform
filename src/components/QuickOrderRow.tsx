@@ -1,6 +1,6 @@
 import { formatPrice } from "@/lib/formatPrice";
 import { getAvailableStock } from "@/lib/inventory";
-import { ProductImagePlaceholder } from "@/components/ProductImagePlaceholder";
+import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
 import type { Product } from "@/types/product";
 
@@ -50,9 +50,11 @@ export function QuickOrderRow({
       </span>
 
       <div className="flex min-w-0 items-center gap-3">
-        <ProductImagePlaceholder
+        <ProductMedia
+          src={product.image}
+          alt={product.name}
           isPromotion={product.isPromotion}
-          className="hidden h-10 w-10 shrink-0 sm:flex"
+          className="hidden h-10 w-10 shrink-0 sm:block"
         />
         <span className="min-w-0 font-medium text-neutral-800 md:truncate">
           {product.name}

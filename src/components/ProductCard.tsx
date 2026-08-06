@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { getAvailableStock } from "@/lib/inventory";
-import { ProductImagePlaceholder } from "@/components/ProductImagePlaceholder";
+import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
 import FavoriteButton from "@/components/FavoriteButton";
 import { getFavoriteProductId } from "@/lib/favorites";
@@ -53,7 +53,9 @@ export default function ProductCard({ product }: { product: Product }) {
     <div className="flex flex-col rounded-lg border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-sm">
       <div className="relative">
         <Link href={productHref} className={`block rounded-md ${focusRing}`}>
-          <ProductImagePlaceholder
+          <ProductMedia
+            src={product.image}
+            alt={product.name}
             isPromotion={product.isPromotion}
             className="aspect-square"
           />

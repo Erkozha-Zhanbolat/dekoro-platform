@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { getAvailableStock } from "@/lib/inventory";
-import { ProductImagePlaceholder } from "@/components/ProductImagePlaceholder";
+import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
 import FavoriteButton from "@/components/FavoriteButton";
 import { getFavoriteProductId } from "@/lib/favorites";
@@ -61,7 +61,9 @@ export default function ProductDetail({ product }: { product: Product }) {
       </Link>
 
       <div className="mt-6 grid grid-cols-1 gap-10 md:grid-cols-2">
-        <ProductImagePlaceholder
+        <ProductMedia
+          src={product.image}
+          alt={product.name}
           isPromotion={product.isPromotion}
           className="aspect-square w-full"
         />
