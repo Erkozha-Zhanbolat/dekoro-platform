@@ -1060,3 +1060,182 @@ export type WarehouseOrderActivityItem = {
   created_by_name: string | null;
   created_at: string;
 };
+
+// ---------------------------------------------------------------------------
+// Payments & receivables (022_order_payments.sql)
+// ---------------------------------------------------------------------------
+
+/** Manual payment method whitelist — no online acquiring. */
+export type OrderPaymentMethod =
+  | "bank_transfer"
+  | "cash"
+  | "card_terminal"
+  | "other";
+
+export const ORDER_PAYMENT_METHOD_LABELS: Record<OrderPaymentMethod, string> = {
+  bank_transfer: "Банковский перевод",
+  cash: "Наличные",
+  card_terminal: "Карта (терминал)",
+  other: "Другое",
+};
+
+export const ORDER_PAYMENT_METHODS: readonly OrderPaymentMethod[] = [
+  "bank_transfer",
+  "cash",
+  "card_terminal",
+  "other",
+];
+
+export type OrderPaymentRecordStatus = "confirmed" | "reversed";
+
+export const ORDER_PAYMENT_RECORD_STATUS_LABELS: Record<
+  OrderPaymentRecordStatus,
+  string
+> = {
+  confirmed: "Подтверждён",
+  reversed: "Сторнирован",
+};
+
+/**
+ * Derived payment coverage for an order.
+ * Formula (tolerance 0.01):
+ *   amount_due = frozen obligation OR provisional (invoice final_total | orders.total)
+ *   amount_paid = SUM(confirmed)
+ *   amount_remaining = amount_due - amount_paid
+ *   unpaid | partially_paid | paid | overpaid
+ */
+export type OrderPaymentStatus =
+  | "unpaid"
+  | "partially_paid"
+  | "paid"
+  | "overpaid";
+
+export const ORDER_PAYMENT_STATUS_LABELS: Record<OrderPaymentStatus, string> = {
+  unpaid: "Не оплачено",
+  partially_paid: "Частично оплачено",
+  paid: "Оплачено",
+  overpaid: "Переплата",
+};
+
+/** Staff list filter including shortfall-after-reversal (UI-only flag). */
+export type StaffPaymentListFilter =
+  | "all"
+  | OrderPaymentStatus
+  | "shortfall_after_reversal";
+
+export const STAFF_PAYMENT_FILTER_OPTIONS: ReadonlyArray<{
+  value: StaffPaymentListFilter;
+  label: string;
+}> = [
+  { value: "all", label: "Все оплаты" },
+  { value: "unpaid", label: "Не оплачено" },
+  { value: "partially_paid", label: "Частично" },
+  { value: "paid", label: "Оплачено" },
+  { value: "overpaid", label: "Переплата" },
+  { value: "shortfall_after_reversal", label: "Задолженность после сторно" },
+];
+
+export type OrderActivityEventType =
+  | "manager_assigned"
+  | "manager_unassigned"
+  | "deadlines_updated"
+  | "payment_recorded"
+  | "payment_reversed"
+  | "payment_completed"
+  | "payment_shortfall_after_reversal";
+
+export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string> = {
+  manager_assigned: "Менеджер назначен",
+  manager_unassigned: "Менеджер снят",
+  deadlines_updated: "Сроки обновлены",
+  payment_recorded: "Оплата зарегистрирована",
+  payment_reversed: "Оплата сторнирована",
+  payment_completed: "Заказ оплачен полностью",
+  payment_shortfall_after_reversal: "Недофинансирование после сторно",
+};
+
+/** Row from public.staff_get_order_payment_summary / batch list. */
+export type StaffOrderPaymentSummary = {
+  order_id: string;
+  order_number: string;
+  order_status: OrderStatus;
+  amount_due: number;
+  amount_paid: number;
+  amount_remaining: number;
+  payment_status: OrderPaymentStatus;
+  invoice_id: string | null;
+  invoice_number: string | null;
+  invoice_tax_mode: DocumentTaxMode | null;
+  invoice_final_total: number | null;
+  has_payment_shortfall: boolean;
+  payment_due_at: string | null;
+  obligation_frozen: boolean;
+  obligation_source_type: "order" | "invoice" | null;
+  obligation_source_number: string | null;
+};
+
+/** Compact row from public.staff_list_orders_payment_summaries. */
+export type StaffOrderPaymentListSummary = {
+  order_id: string;
+  order_number: string;
+  order_status: OrderStatus;
+  amount_due: number;
+  amount_paid: number;
+  amount_remaining: number;
+  payment_status: OrderPaymentStatus;
+  invoice_id: string | null;
+  invoice_number: string | null;
+  has_payment_shortfall: boolean;
+  payment_due_at: string | null;
+  obligation_frozen: boolean;
+  obligation_source_type: "order" | "invoice" | null;
+};
+
+/** Row from public.staff_list_order_payments. */
+export type StaffOrderPaymentItem = {
+  id: string;
+  order_id: string;
+  amount: number;
+  payment_date: string;
+  payment_method: OrderPaymentMethod;
+  reference_number: string | null;
+  comment: string | null;
+  status: OrderPaymentRecordStatus;
+  recorded_by: string;
+  recorded_by_name: string | null;
+  recorded_at: string;
+  reversed_by: string | null;
+  reversed_by_name: string | null;
+  reversed_at: string | null;
+  reversal_reason: string | null;
+};
+
+/** Client-safe summary from public.client_get_order_payment_summary. */
+export type ClientOrderPaymentSummary = {
+  amount_due: number;
+  amount_paid: number;
+  amount_remaining: number;
+  payment_status: OrderPaymentStatus;
+  invoice_number: string | null;
+};
+
+/** Aggregate from public.staff_get_customer_receivables. */
+export type StaffCustomerReceivables = {
+  customer_id: string;
+  open_obligation_total: number;
+  amount_paid_total: number;
+  amount_outstanding_total: number;
+  orders_with_balance_count: number;
+  overdue_outstanding_total: number;
+  overdue_orders_count: number;
+};
+
+/** Roles that may view/record order payments (not warehouse). */
+export function canAccessOrderPayments(role: UserRole | null | undefined): boolean {
+  return role === "manager" || role === "accountant" || role === "admin";
+}
+
+/** Roles that may reverse a payment. */
+export function canReverseOrderPayments(role: UserRole | null | undefined): boolean {
+  return role === "accountant" || role === "admin";
+}

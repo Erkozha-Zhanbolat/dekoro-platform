@@ -34,16 +34,20 @@ import type { StaffOrderDocumentListItem } from "@/lib/staff/documents";
 import { getOrganizationSettings } from "@/lib/staff/organization";
 import { formatPrice } from "@/lib/formatPrice";
 import {
+  canAccessOrderPayments,
   canAccessWarehouseOps,
   canEditOrderItems,
+  ORDER_ACTIVITY_EVENT_LABELS,
   ORDER_DOCUMENT_STATUS_LABELS,
   ORDER_STATUS_LABELS,
   type DocumentTaxMode,
+  type OrderActivityEventType,
   type OrderDocumentType,
   type OrderStatus,
 } from "@/types/database";
 import { useProfile } from "@/context/ProfileContext";
 import StaffAddOrderItemModal from "@/components/staff/StaffAddOrderItemModal";
+import StaffOrderPaymentSection from "@/components/staff/StaffOrderPaymentSection";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -192,6 +196,7 @@ export default function StaffOrderDetailPage() {
 
   const loading = loadedId !== orderId;
   const canManageWorkflow = profile?.role === "manager" || profile?.role === "admin";
+  const canSeePayments = canAccessOrderPayments(profile?.role);
   const isAdmin = profile?.role === "admin";
   const canManageItems =
     canManageWorkflow && order != null && canEditOrderItems(order.status);
@@ -514,7 +519,19 @@ export default function StaffOrderDetailPage() {
         <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-neutral-800">Действия по заказу</h2>
           <div className="mt-4 flex flex-wrap gap-2">
-            {transitions.map((nextStatus) => (
+            {transitions
+              .filter((nextStatus) => {
+                // Paid confirmation lives in the Оплата block when finance UI is visible.
+                if (
+                  canSeePayments &&
+                  order.status === "awaiting_payment" &&
+                  nextStatus === "paid"
+                ) {
+                  return false;
+                }
+                return true;
+              })
+              .map((nextStatus) => (
               <button
                 key={nextStatus}
                 type="button"
@@ -611,6 +628,16 @@ export default function StaffOrderDetailPage() {
             </p>
           )}
         </section>
+
+        {canSeePayments && (
+          <StaffOrderPaymentSection
+            orderId={order.id}
+            orderStatus={order.status}
+            role={profile?.role}
+            canManageWorkflow={canManageWorkflow}
+            onOrderStatusChanged={refetchOrder}
+          />
+        )}
 
         <section className="rounded-lg border border-neutral-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-neutral-800">Сроки</h2>
@@ -974,7 +1001,7 @@ export default function StaffOrderDetailPage() {
         <section className="rounded-lg border border-neutral-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-neutral-800">Активность заказа</h2>
           <p className="mt-1 text-sm text-neutral-500">
-            Назначение менеджера и изменения сроков — без ложных переходов статуса.
+            Назначение менеджера, сроки и события оплаты.
           </p>
           {order.activityLog.length === 0 ? (
             <p className="mt-3 text-sm text-neutral-500">Активности пока нет</p>
@@ -987,11 +1014,9 @@ export default function StaffOrderDetailPage() {
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <p className="font-medium text-neutral-800">
-                      {entry.event_type === "manager_assigned"
-                        ? "Менеджер назначен"
-                        : entry.event_type === "manager_unassigned"
-                          ? "Менеджер снят"
-                          : "Сроки обновлены"}
+                      {ORDER_ACTIVITY_EVENT_LABELS[
+                        entry.event_type as OrderActivityEventType
+                      ] ?? entry.event_type}
                     </p>
                     <time className="text-xs text-neutral-400">
                       {new Date(entry.created_at).toLocaleString("ru-RU")}

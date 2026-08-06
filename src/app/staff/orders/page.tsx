@@ -1,12 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatPrice } from "@/lib/formatPrice";
-import { ORDER_STATUS_LABELS } from "@/types/database";
-import type { OrderStatus } from "@/types/database";
+import {
+  ORDER_PAYMENT_STATUS_LABELS,
+  ORDER_STATUS_LABELS,
+  STAFF_PAYMENT_FILTER_OPTIONS,
+  canAccessOrderPayments,
+} from "@/types/database";
+import type { OrderStatus, StaffPaymentListFilter } from "@/types/database";
 import { getStaffOrders, STAFF_STATUS_FILTER_OPTIONS } from "@/lib/staff/orders";
 import type { StaffOrderListItem } from "@/lib/staff/orders";
+import { listStaffOrdersPaymentSummaries } from "@/lib/staff/payments";
+import type { StaffOrderPaymentListSummary } from "@/types/database";
 import { useProfile } from "@/context/ProfileContext";
 
 const focusRing =
@@ -20,12 +27,17 @@ const SEARCH_DEBOUNCE_MS = 300;
 export default function StaffOrdersPage() {
   const { profile } = useProfile();
   const canCreateOrder = profile?.role === "manager" || profile?.role === "admin";
+  const canSeePayments = canAccessOrderPayments(profile?.role);
 
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
+  const [paymentFilter, setPaymentFilter] = useState<StaffPaymentListFilter>("all");
 
   const [orders, setOrders] = useState<StaffOrderListItem[]>([]);
+  const [paymentByOrderId, setPaymentByOrderId] = useState<
+    Record<string, StaffOrderPaymentListSummary>
+  >({});
   const [loadError, setLoadError] = useState<string | null>(null);
   // undefined = not loaded yet for this key ("<search>:<status>:<reloadToken>").
   const [loadedKey, setLoadedKey] = useState<string | undefined>(undefined);
@@ -39,7 +51,7 @@ export default function StaffOrdersPage() {
     return () => clearTimeout(timeout);
   }, [searchInput]);
 
-  const currentKey = `${debouncedSearch}:${statusFilter}:${reloadToken}`;
+  const currentKey = `${debouncedSearch}:${statusFilter}:${reloadToken}:${canSeePayments ? "pay" : "nopay"}`;
 
   useEffect(() => {
     if (loadedKey === currentKey) {
@@ -49,11 +61,41 @@ export default function StaffOrdersPage() {
     let ignore = false;
 
     getStaffOrders({ search: debouncedSearch, status: statusFilter, limit: ORDERS_LIST_LIMIT })
-      .then((result) => {
+      .then(async (result) => {
         if (ignore) {
           return;
         }
         setOrders(result);
+
+        if (canSeePayments && result.length > 0) {
+          try {
+            const summaries = await listStaffOrdersPaymentSummaries(
+              result.map((order) => order.id),
+            );
+            if (ignore) {
+              return;
+            }
+            const map: Record<string, StaffOrderPaymentListSummary> = {};
+            for (const summary of summaries) {
+              map[summary.order_id] = summary;
+            }
+            setPaymentByOrderId(map);
+          } catch (error: unknown) {
+            if (ignore) {
+              return;
+            }
+            setLoadError(
+              error instanceof Error
+                ? error.message
+                : "Не удалось загрузить сводки оплат",
+            );
+            setLoadedKey(currentKey);
+            return;
+          }
+        } else {
+          setPaymentByOrderId({});
+        }
+
         setLoadError(null);
         setLoadedKey(currentKey);
       })
@@ -68,9 +110,25 @@ export default function StaffOrdersPage() {
     return () => {
       ignore = true;
     };
-  }, [debouncedSearch, statusFilter, currentKey, loadedKey]);
+  }, [debouncedSearch, statusFilter, currentKey, loadedKey, canSeePayments]);
 
   const loading = loadedKey !== currentKey;
+
+  const visibleOrders = useMemo(() => {
+    if (!canSeePayments || paymentFilter === "all") {
+      return orders;
+    }
+    return orders.filter((order) => {
+      const summary = paymentByOrderId[order.id];
+      if (!summary) {
+        return false;
+      }
+      if (paymentFilter === "shortfall_after_reversal") {
+        return summary.has_payment_shortfall;
+      }
+      return summary.payment_status === paymentFilter;
+    });
+  }, [orders, paymentByOrderId, paymentFilter, canSeePayments]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -89,7 +147,7 @@ export default function StaffOrdersPage() {
         )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
         <input
           type="search"
           value={searchInput}
@@ -108,6 +166,21 @@ export default function StaffOrdersPage() {
             </option>
           ))}
         </select>
+        {canSeePayments && (
+          <select
+            value={paymentFilter}
+            onChange={(event) =>
+              setPaymentFilter(event.target.value as StaffPaymentListFilter)
+            }
+            className={`w-full rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-800 outline-none transition-colors focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] sm:w-56 ${focusRing}`}
+          >
+            {STAFF_PAYMENT_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {loadError ? (
@@ -130,7 +203,7 @@ export default function StaffOrdersPage() {
         <div className="rounded-lg border border-neutral-200 bg-white py-12 text-center text-sm text-neutral-500">
           Загрузка заказов...
         </div>
-      ) : orders.length === 0 ? (
+      ) : visibleOrders.length === 0 ? (
         <div className="rounded-lg border border-neutral-200 bg-white py-12 text-center text-sm text-neutral-500">
           Заказы не найдены
         </div>
@@ -153,74 +226,116 @@ export default function StaffOrdersPage() {
                   <th className="px-5 py-3">Клиент / контакт</th>
                   <th className="px-5 py-3">Телефон</th>
                   <th className="px-5 py-3">Статус</th>
+                  {canSeePayments && <th className="px-5 py-3">Оплата</th>}
+                  {canSeePayments && (
+                    <th className="px-5 py-3 text-right">Оплачено / остаток</th>
+                  )}
                   <th className="px-5 py-3 text-right">Сумма</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => (
-                  <tr key={order.id} className="border-b border-neutral-100 last:border-b-0">
-                    <td className="px-5 py-3 font-medium text-neutral-800">
-                      {order.order_number}
-                    </td>
-                    <td className="px-5 py-3 text-neutral-600">
-                      {new Date(order.created_at).toLocaleDateString("ru-RU")}
-                    </td>
-                    <td className="px-5 py-3 text-neutral-600">{order.contact_name}</td>
-                    <td className="px-5 py-3 text-neutral-600">{order.contact_phone}</td>
-                    <td className="px-5 py-3">
-                      <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
-                        {ORDER_STATUS_LABELS[order.status]}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-right font-medium text-neutral-800">
-                      {formatPrice(order.total)}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <Link
-                        href={`/staff/orders/${order.id}`}
-                        className={`text-sm font-medium text-[#0F766E] transition-colors hover:text-[#0c5f58] rounded-sm ${focusRing}`}
-                      >
-                        Открыть
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {visibleOrders.map((order) => {
+                  const pay = paymentByOrderId[order.id];
+                  return (
+                    <tr key={order.id} className="border-b border-neutral-100 last:border-b-0">
+                      <td className="px-5 py-3 font-medium text-neutral-800">
+                        {order.order_number}
+                      </td>
+                      <td className="px-5 py-3 text-neutral-600">
+                        {new Date(order.created_at).toLocaleDateString("ru-RU")}
+                      </td>
+                      <td className="px-5 py-3 text-neutral-600">{order.contact_name}</td>
+                      <td className="px-5 py-3 text-neutral-600">{order.contact_phone}</td>
+                      <td className="px-5 py-3">
+                        <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
+                          {ORDER_STATUS_LABELS[order.status]}
+                        </span>
+                      </td>
+                      {canSeePayments && (
+                        <td className="px-5 py-3">
+                          {pay ? (
+                            <span
+                              className={`text-xs font-medium ${
+                                pay.has_payment_shortfall
+                                  ? "text-red-700"
+                                  : "text-neutral-600"
+                              }`}
+                            >
+                              {pay.has_payment_shortfall
+                                ? "Задолженность после сторно"
+                                : ORDER_PAYMENT_STATUS_LABELS[pay.payment_status]}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-neutral-400">—</span>
+                          )}
+                        </td>
+                      )}
+                      {canSeePayments && (
+                        <td className="px-5 py-3 text-right text-neutral-600">
+                          {pay
+                            ? `${formatPrice(pay.amount_paid)} / ${formatPrice(Math.max(pay.amount_remaining, 0))}`
+                            : "—"}
+                        </td>
+                      )}
+                      <td className="px-5 py-3 text-right font-medium text-neutral-800">
+                        {formatPrice(order.total)}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <Link
+                          href={`/staff/orders/${order.id}`}
+                          className={`text-sm font-medium text-[#0F766E] transition-colors hover:text-[#0c5f58] rounded-sm ${focusRing}`}
+                        >
+                          Открыть
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           {/* Mobile cards */}
           <div className="flex flex-col gap-3 md:hidden">
-            {orders.map((order) => (
-              <Link
-                key={order.id}
-                href={`/staff/orders/${order.id}`}
-                className={`flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 transition-colors hover:border-[#0F766E] ${focusRing}`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-neutral-800">
-                    {order.order_number}
-                  </span>
-                  <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
-                    {ORDER_STATUS_LABELS[order.status]}
-                  </span>
-                </div>
-                <p className="text-xs text-neutral-500">
-                  {new Date(order.created_at).toLocaleDateString("ru-RU")}
-                </p>
-                <p className="text-sm text-neutral-600">{order.contact_name}</p>
-                <p className="text-sm text-neutral-500">{order.contact_phone}</p>
-                <div className="mt-1 flex items-center justify-between">
-                  <span className="text-xs text-neutral-500">
-                    {order.itemCount} поз. · {order.totalQuantity} шт.
-                  </span>
-                  <span className="font-semibold text-neutral-800">
-                    {formatPrice(order.total)}
-                  </span>
-                </div>
-              </Link>
-            ))}
+            {visibleOrders.map((order) => {
+              const pay = paymentByOrderId[order.id];
+              return (
+                <Link
+                  key={order.id}
+                  href={`/staff/orders/${order.id}`}
+                  className={`flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 transition-colors hover:border-[#0F766E] ${focusRing}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-neutral-800">{order.order_number}</p>
+                      <p className="mt-0.5 text-sm text-neutral-500">{order.contact_name}</p>
+                    </div>
+                    <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
+                      {ORDER_STATUS_LABELS[order.status]}
+                    </span>
+                  </div>
+                  {canSeePayments && pay && (
+                    <p className="text-sm text-neutral-600">
+                      {pay.has_payment_shortfall
+                        ? "Задолженность после сторно"
+                        : ORDER_PAYMENT_STATUS_LABELS[pay.payment_status]}
+                      {" · "}
+                      {formatPrice(pay.amount_paid)} /{" "}
+                      {formatPrice(Math.max(pay.amount_remaining, 0))}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-neutral-500">
+                      {new Date(order.created_at).toLocaleDateString("ru-RU")}
+                    </span>
+                    <span className="font-medium text-neutral-800">
+                      {formatPrice(order.total)}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </>
       )}

@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type {
   DeliveryType,
+  OrderActivityEventType,
   OrderStatus,
   StaffCreateOrderResult,
   StaffOrderMutationResult,
@@ -150,7 +151,7 @@ export type StaffOrderInternalNoteItem = {
 export type StaffOrderActivityItem = {
   id: string;
   order_id: string;
-  event_type: "manager_assigned" | "manager_unassigned" | "deadlines_updated";
+  event_type: OrderActivityEventType;
   description: string | null;
   metadata: Record<string, unknown> | null;
   created_by: string;

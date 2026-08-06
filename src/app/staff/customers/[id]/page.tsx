@@ -11,7 +11,8 @@ import {
   updateStaffCustomer,
 } from "@/lib/staff/customers";
 import type { StaffCustomerDetails, StaffCustomerOrderListItem } from "@/lib/staff/customers";
-import type { CustomerSource } from "@/types/database";
+import { getStaffCustomerReceivables } from "@/lib/staff/payments";
+import type { CustomerSource, StaffCustomerReceivables } from "@/types/database";
 import {
   CUSTOMER_SOURCE_LABELS,
   CUSTOMER_SOURCES,
@@ -46,6 +47,8 @@ export default function StaffCustomerDetailPage() {
 
   const [customer, setCustomer] = useState<StaffCustomerDetails | null>(null);
   const [orders, setOrders] = useState<StaffCustomerOrderListItem[]>([]);
+  const [receivables, setReceivables] = useState<StaffCustomerReceivables | null>(null);
+  const [receivablesError, setReceivablesError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -79,6 +82,7 @@ export default function StaffCustomerDetailPage() {
           setLoadError("Клиент не найден");
           setCustomer(null);
           setOrders([]);
+          setReceivables(null);
         } else {
           setCustomer(customerResult);
           setOrders(ordersResult);
@@ -93,6 +97,26 @@ export default function StaffCustomerDetailPage() {
           setCity(customerResult.city ?? "");
           setSource(customerResult.source ?? "staff");
           setNotes(customerResult.notes ?? "");
+
+          getStaffCustomerReceivables(customerId)
+            .then((recv) => {
+              if (ignore) {
+                return;
+              }
+              setReceivables(recv);
+              setReceivablesError(null);
+            })
+            .catch((error: unknown) => {
+              if (ignore) {
+                return;
+              }
+              setReceivables(null);
+              setReceivablesError(
+                error instanceof Error
+                  ? error.message
+                  : "Не удалось загрузить дебиторку",
+              );
+            });
         }
       })
       .catch((error: unknown) => {
@@ -397,6 +421,64 @@ export default function StaffCustomerDetailPage() {
           )}
         </div>
       )}
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="text-lg font-semibold text-neutral-800">Дебиторка</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          Обязательства по незакрытым платежам (включая завершённые заказы с долгом).
+        </p>
+        {receivablesError ? (
+          <p className="mt-3 text-sm text-neutral-500">{receivablesError}</p>
+        ) : !receivables ? (
+          <p className="mt-3 text-sm text-neutral-500">Загрузка...</p>
+        ) : (
+          <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Обязательства
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">
+                {formatPrice(receivables.open_obligation_total)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Оплачено
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">
+                {formatPrice(receivables.amount_paid_total)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Задолженность
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">
+                {formatPrice(receivables.amount_outstanding_total)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Заказов с долгом
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">
+                {receivables.orders_with_balance_count}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Просрочено
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-red-700">
+                {formatPrice(receivables.overdue_outstanding_total)}
+              </dd>
+              <p className="mt-0.5 text-xs text-neutral-500">
+                заказов: {receivables.overdue_orders_count}
+              </p>
+            </div>
+          </dl>
+        )}
+      </section>
 
       <div className="rounded-lg border border-neutral-200 bg-white">
         <div className="border-b border-neutral-200 px-5 py-4">

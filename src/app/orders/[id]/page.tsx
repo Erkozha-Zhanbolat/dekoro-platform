@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ClientOrderDocuments } from "@/components/ClientOrderDocuments";
+import { ClientOrderPaymentSummaryBlock } from "@/components/ClientOrderPaymentSummary";
 import { OrderStatusTimeline } from "@/components/OrderStatusTimeline";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
@@ -345,6 +346,8 @@ export default function OrderDetailPage() {
           history={history}
           loadError={timelineError}
         />
+
+        <ClientOrderPaymentSummaryBlock orderId={order.id} />
 
         <section>
           <h2 className="text-lg font-semibold text-neutral-800">
