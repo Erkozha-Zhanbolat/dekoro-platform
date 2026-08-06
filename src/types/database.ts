@@ -12,6 +12,8 @@ export const USER_ROLE_LABELS: Record<UserRole, string> = {
  * Roles that may enter the internal Staff Platform (/staff/**).
  * Matches supabase/migrations/010_staff_role_access.sql's
  * has_staff_role() allow-list — keep both in sync if this ever changes.
+ * Inactive profiles are blocked separately via profiles.is_active
+ * (get_my_role returns NULL when inactive as of migration 024).
  */
 export const STAFF_ROLES: readonly UserRole[] = ["manager", "accountant", "warehouse", "admin"];
 
@@ -25,6 +27,7 @@ export function isStaffRole(role: UserRole | null | undefined): boolean {
  * identical to isStaffRole(), kept as a separate name so access rules for
  * the Staff Platform can diverge from the general staff/client distinction
  * later without touching every call site.
+ * Callers must also check profiles.is_active (see staff layout).
  */
 export function canAccessStaff(role: UserRole | null | undefined): boolean {
   return isStaffRole(role);

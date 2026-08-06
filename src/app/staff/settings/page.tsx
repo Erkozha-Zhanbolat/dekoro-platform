@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
 import {
@@ -196,7 +197,24 @@ export default function StaffOrganizationSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-2xl font-bold text-neutral-800">Настройки организации</h1>
+      <h1 className="text-2xl font-bold text-neutral-800">Настройки</h1>
+      <p className="mt-1 text-sm text-neutral-500">
+        Организация и сотрудники. Реквизиты используются в счетах и накладных.
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2 border-b border-neutral-200 pb-3">
+        <span className="rounded-md bg-[#0F766E]/10 px-3 py-1.5 text-sm font-medium text-[#0F766E]">
+          Организация
+        </span>
+        <Link
+          href="/staff/settings/users"
+          className={`rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
+        >
+          Сотрудники
+        </Link>
+      </div>
+
+      <h2 className="mt-6 text-lg font-semibold text-neutral-800">Организация</h2>
       <p className="mt-1 text-sm text-neutral-500">
         Реквизиты DEKORO для счетов и накладных. Изображения хранятся в private Storage.
       </p>

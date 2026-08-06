@@ -27,7 +27,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
   const loading = authLoading || (!!user && profileLoading);
   const role = profile?.role ?? null;
-  const allowed = !loading && !!user && canAccessStaff(role);
+  const isActive = profile?.is_active === true;
+  const allowed = !loading && !!user && canAccessStaff(role) && isActive;
 
   useEffect(() => {
     if (loading) {
@@ -37,10 +38,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       router.replace(`/login?next=${encodeURIComponent("/staff")}`);
       return;
     }
-    if (!canAccessStaff(role)) {
+    if (!canAccessStaff(role) || !isActive) {
       router.replace("/");
     }
-  }, [loading, user, role, router]);
+  }, [loading, user, role, isActive, router]);
 
   if (loading || !allowed || !profile) {
     return (

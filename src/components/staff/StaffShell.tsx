@@ -64,6 +64,25 @@ function NavLinks({ role, pathname, onNavigate }: {
 }) {
   const items = getStaffNavItems(role);
 
+  function isItemActive(href: string): boolean {
+    if (href === "/staff") {
+      return pathname === "/staff";
+    }
+    if (!pathname.startsWith(href)) {
+      return false;
+    }
+    // Prefer the most specific matching nav item (e.g. /staff/settings/users
+    // over /staff/settings).
+    const moreSpecificExists = items.some(
+      (other) =>
+        other.enabled &&
+        other.href !== href &&
+        other.href.startsWith(href) &&
+        pathname.startsWith(other.href),
+    );
+    return !moreSpecificExists;
+  }
+
   return (
     <nav className="flex flex-col gap-1">
       {items.map((item) => {
@@ -79,8 +98,7 @@ function NavLinks({ role, pathname, onNavigate }: {
           );
         }
 
-        const isActive =
-          item.href === "/staff" ? pathname === "/staff" : pathname.startsWith(item.href);
+        const isActive = isItemActive(item.href);
 
         return (
           <Link
