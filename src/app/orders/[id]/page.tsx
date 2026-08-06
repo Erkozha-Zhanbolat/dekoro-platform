@@ -3,12 +3,24 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ClientOrderDocuments } from "@/components/ClientOrderDocuments";
+import { OrderStatusTimeline } from "@/components/OrderStatusTimeline";
 import { useAuth } from "@/context/AuthContext";
+import { useCart } from "@/context/CartContext";
 import { useCatalog } from "@/context/CatalogContext";
-import { DELIVERY_TYPE_LABELS, cancelOrder, getOrder } from "@/lib/orders";
+import { getCatalog, mapCatalogProductToProduct } from "@/lib/catalog";
+import {
+  DELIVERY_TYPE_LABELS,
+  cancelOrder,
+  getOrder,
+  listClientOrderStatusHistory,
+  planRepeatOrder,
+  repeatOrderSkipReasonLabel,
+} from "@/lib/orders";
 import type { OrderDetail } from "@/lib/orders";
 import { formatPrice } from "@/lib/formatPrice";
-import { ORDER_STATUS_LABELS } from "@/types/database";
+import type { ClientOrderStatusHistoryEntry } from "@/types/database";
+import { CLIENT_ORDER_STATUS_LABELS } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -28,14 +40,18 @@ export default function OrderDetailPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { refreshCatalog } = useCatalog();
+  const { addManyToCart } = useCart();
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [history, setHistory] = useState<ClientOrderStatusHistoryEntry[]>([]);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // undefined = not loaded yet for this key ("<userId>:<orderId>").
   const [loadedKey, setLoadedKey] = useState<string | undefined>(undefined);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [repeating, setRepeating] = useState(false);
+  const [repeatMessage, setRepeatMessage] = useState<string | null>(null);
 
   const currentKey = user ? `${user.id}:${orderId}` : undefined;
 
@@ -55,6 +71,8 @@ export default function OrderDetailPage() {
 
     let ignore = false;
 
+    // Core order via RLS — must succeed for the page to render.
+    // Timeline is optional (021); failure must not blank the page.
     getOrder(orderId)
       .then((result) => {
         if (ignore) {
@@ -64,6 +82,28 @@ export default function OrderDetailPage() {
         setNotFound(result === null);
         setLoadError(null);
         setLoadedKey(currentKey);
+
+        if (!result) {
+          setHistory([]);
+          setTimelineError(null);
+          return;
+        }
+
+        listClientOrderStatusHistory(orderId)
+          .then((statusHistory) => {
+            if (ignore) {
+              return;
+            }
+            setHistory(statusHistory);
+            setTimelineError(null);
+          })
+          .catch((error: unknown) => {
+            if (ignore) {
+              return;
+            }
+            setHistory([]);
+            setTimelineError(friendlyTimelineError(error));
+          });
       })
       .catch((error: unknown) => {
         if (ignore) {
@@ -71,6 +111,8 @@ export default function OrderDetailPage() {
         }
         setOrder(null);
         setNotFound(false);
+        setHistory([]);
+        setTimelineError(null);
         setLoadError(
           error instanceof Error ? error.message : "Не удалось загрузить заказ",
         );
@@ -84,9 +126,6 @@ export default function OrderDetailPage() {
 
   const loading = !authLoading && !!user && loadedKey !== currentKey;
 
-  // Only 'new' orders can be cancelled — cancel_order() (009) itself
-  // re-checks this server-side (and ownership), this is just what shows the
-  // button at all.
   async function handleCancelOrder() {
     if (!order || order.status !== "new" || cancelling) {
       return;
@@ -104,22 +143,80 @@ export default function OrderDetailPage() {
 
     try {
       await cancelOrder(order.id);
-      // Re-fetch the full order instead of patching status locally, so the
-      // displayed data always matches exactly what cancel_order() committed.
       const refreshed = await getOrder(orderId);
       setOrder(refreshed);
       setNotFound(refreshed === null);
-      // Cancelling releases the order's inventory reservation server-side;
-      // refresh the catalog so available stock reflects that immediately.
       void refreshCatalog();
+
+      if (refreshed) {
+        try {
+          const statusHistory = await listClientOrderStatusHistory(orderId);
+          setHistory(statusHistory);
+          setTimelineError(null);
+        } catch (error: unknown) {
+          setHistory([]);
+          setTimelineError(friendlyTimelineError(error));
+        }
+      }
     } catch (error) {
-      // Leave `order` (and its status) untouched on failure — only surface
-      // the error, never guess at the new state ourselves.
       setCancelError(
         error instanceof Error ? error.message : "Не удалось отменить заказ",
       );
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function handleRepeatOrder() {
+    if (!order || repeating) {
+      return;
+    }
+    setRepeating(true);
+    setRepeatMessage(null);
+
+    try {
+      const catalog = (await getCatalog()).map(mapCatalogProductToProduct);
+      const plan = planRepeatOrder(order.items, catalog);
+
+      if (plan.entries.length === 0) {
+        const lines = plan.skipped.map(
+          (s) => `· ${s.productName} — ${repeatOrderSkipReasonLabel(s.reason)}`,
+        );
+        setRepeatMessage(
+          lines.length > 0
+            ? `Не удалось добавить товары:\n${lines.join("\n")}`
+            : "Нет доступных товаров для повтора",
+        );
+        return;
+      }
+
+      addManyToCart(plan.entries);
+
+      const notices: string[] = [];
+      for (const s of plan.skipped) {
+        notices.push(
+          `${s.productName} — ${repeatOrderSkipReasonLabel(s.reason)}`,
+        );
+      }
+      for (const r of plan.reduced) {
+        notices.push(
+          `${r.productName} — добавлено ${r.addedQuantity} из ${r.requestedQuantity} (по остатку)`,
+        );
+      }
+      if (notices.length > 0) {
+        window.sessionStorage.setItem(
+          "dekoro_repeat_order_notice",
+          notices.join("\n"),
+        );
+      }
+
+      router.push("/cart");
+    } catch (error: unknown) {
+      setRepeatMessage(
+        error instanceof Error ? error.message : "Не удалось повторить заказ",
+      );
+    } finally {
+      setRepeating(false);
     }
   }
 
@@ -174,33 +271,81 @@ export default function OrderDetailPage() {
         <h1 className="text-2xl font-bold text-neutral-800">
           Заказ {order.order_number}
         </h1>
-        <span className="rounded-full bg-neutral-100 px-3 py-1 text-sm font-medium text-neutral-600">
-          {ORDER_STATUS_LABELS[order.status]}
+        <span
+          className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+            order.status === "cancelled"
+              ? "bg-red-50 text-red-700"
+              : "bg-teal-50 text-[#0F766E]"
+          }`}
+        >
+          {CLIENT_ORDER_STATUS_LABELS[order.status]}
         </span>
       </div>
       <p className="mt-1 text-sm text-neutral-500">
         от {new Date(order.created_at).toLocaleString("ru-RU")}
       </p>
 
-      {order.status === "new" && (
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={handleCancelOrder}
-            disabled={cancelling}
-            className={`rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:border-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 disabled:hover:bg-transparent ${focusRing}`}
-          >
-            {cancelling ? "Отмена..." : "Отменить заказ"}
-          </button>
-          {cancelError && (
-            <p className="mt-2 text-sm text-red-600" role="alert">
-              {cancelError}
+      {(order.payment_due_at || order.reservation_expires_at) && (
+        <div className="mt-3 space-y-1 text-sm text-neutral-600">
+          {order.payment_due_at && (
+            <p>
+              Срок оплаты:{" "}
+              {new Date(order.payment_due_at).toLocaleString("ru-RU")}
+            </p>
+          )}
+          {order.reservation_expires_at && (
+            <p>
+              Срок резерва:{" "}
+              {new Date(order.reservation_expires_at).toLocaleString("ru-RU")}
             </p>
           )}
         </div>
       )}
 
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        {order.status === "new" && (
+          <button
+            type="button"
+            onClick={handleCancelOrder}
+            disabled={cancelling}
+            className={`min-h-11 rounded-md border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:border-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 disabled:hover:bg-transparent ${focusRing}`}
+          >
+            {cancelling ? "Отмена..." : "Отменить заказ"}
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={handleRepeatOrder}
+          disabled={repeating}
+          className={`min-h-11 rounded-md border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-800 transition-colors hover:border-[#0F766E] hover:text-[#0F766E] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
+        >
+          {repeating ? "Добавление…" : "Повторить заказ"}
+        </button>
+      </div>
+
+      {cancelError && (
+        <p className="mt-2 text-sm text-red-600" role="alert">
+          {cancelError}
+        </p>
+      )}
+      {repeatMessage && (
+        <p
+          className="mt-2 whitespace-pre-line text-sm text-amber-800"
+          role="status"
+        >
+          {repeatMessage}
+        </p>
+      )}
+
       <div className="mt-8 flex flex-col gap-8">
+        <OrderStatusTimeline
+          currentStatus={order.status}
+          createdAt={order.created_at}
+          history={history}
+          loadError={timelineError}
+        />
+
         <section>
           <h2 className="text-lg font-semibold text-neutral-800">
             Контактные данные
@@ -242,7 +387,27 @@ export default function OrderDetailPage() {
           <h2 className="text-lg font-semibold text-neutral-800">
             Состав заказа
           </h2>
-          <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-200">
+          <div className="mt-3 space-y-3 sm:hidden">
+            {order.items.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-lg border border-neutral-200 p-3 text-sm"
+              >
+                <p className="font-medium text-neutral-800">
+                  {item.product_name}
+                </p>
+                <div className="mt-2 flex justify-between text-neutral-600">
+                  <span>
+                    {item.quantity} × {formatPrice(item.unit_price)}
+                  </span>
+                  <span className="font-medium text-neutral-800">
+                    {formatPrice(item.total)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 hidden overflow-x-auto rounded-lg border border-neutral-200 sm:block">
             <table className="w-full min-w-[520px] text-sm">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
@@ -299,6 +464,10 @@ export default function OrderDetailPage() {
             </div>
           </div>
         </section>
+
+        <section>
+          <ClientOrderDocuments orderId={order.id} />
+        </section>
       </div>
     </div>
   );
@@ -315,4 +484,16 @@ function Row({ label, value }: { label: string; value: string | null }) {
       <dd className="text-right text-neutral-800">{value}</dd>
     </div>
   );
+}
+
+function friendlyTimelineError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (
+    /Could not find the function|PGRST202|function .* does not exist/i.test(
+      message,
+    )
+  ) {
+    return "История статусов временно недоступна. Обновите страницу позже.";
+  }
+  return message || "Не удалось загрузить историю статусов";
 }

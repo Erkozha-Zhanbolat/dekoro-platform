@@ -1,5 +1,5 @@
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import type { StaffOrderDocumentDetails } from "@/types/database";
+import type { OrderDocumentPdfSource } from "@/types/database";
 import {
   PDF_PAGE_SIZE,
   documentNumberFromMetadata,
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
 });
 
 type Props = {
-  document: StaffOrderDocumentDetails;
+  document: OrderDocumentPdfSource;
   images: ResolvedSupplierImages;
 };
 

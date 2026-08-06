@@ -423,6 +423,45 @@ export const ORDER_WORKFLOW_STATUSES: readonly OrderStatus[] = [
   "completed",
 ];
 
+/** Client «Активные» — everything except terminal completed/cancelled. */
+export const CLIENT_ACTIVE_ORDER_STATUSES: readonly OrderStatus[] = [
+  "new",
+  "awaiting_payment",
+  "paid",
+  "picking",
+  "ready_for_shipment",
+  "shipped",
+];
+
+/** Client «История» — terminal statuses only. */
+export const CLIENT_HISTORY_ORDER_STATUSES: readonly OrderStatus[] = [
+  "completed",
+  "cancelled",
+];
+
+/**
+ * Client-facing status labels (storefront).
+ * Differs from ORDER_STATUS_LABELS for picking (warehouse wording).
+ */
+export const CLIENT_ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  new: "Создан",
+  awaiting_payment: "Ожидает оплаты",
+  paid: "Оплачен",
+  picking: "Собирается на складе",
+  ready_for_shipment: "Готов к отгрузке",
+  shipped: "Отгружен",
+  completed: "Завершён",
+  cancelled: "Отменён",
+};
+
+export function isClientActiveOrderStatus(status: OrderStatus): boolean {
+  return (CLIENT_ACTIVE_ORDER_STATUSES as readonly string[]).includes(status);
+}
+
+export function isClientHistoryOrderStatus(status: OrderStatus): boolean {
+  return (CLIENT_HISTORY_ORDER_STATUSES as readonly string[]).includes(status);
+}
+
 /** Staff may edit line items only while the order is still pre-payment. */
 export const ORDER_ITEM_EDITABLE_STATUSES: readonly OrderStatus[] = [
   "new",
@@ -473,6 +512,18 @@ export interface OrderStatusHistoryEntry {
   note: string | null;
   created_at: string;
 }
+
+/**
+ * Client-safe status transition from public.client_list_order_status_history
+ * (021) — no note / changed_by.
+ */
+export type ClientOrderStatusHistoryEntry = {
+  id: string;
+  order_id: string;
+  from_status: OrderStatus | null;
+  to_status: OrderStatus;
+  created_at: string;
+};
 
 /** Row from public.order_internal_notes (012) — read via staff RPC only. */
 export interface OrderInternalNote {
@@ -826,6 +877,37 @@ export type StaffOrderDocumentListItem = {
 
 /** Row returned by public.staff_get_document(p_order_id, p_document_id). */
 export type StaffOrderDocumentDetails = StaffOrderDocumentListItem & {
+  metadata: OrderDocumentMetadata;
+};
+
+/**
+ * Client document list row from public.client_list_order_documents (021).
+ * No staff identity / print audit / file_path.
+ */
+export type ClientOrderDocumentListItem = {
+  id: string;
+  order_id: string;
+  document_type: OrderDocumentType;
+  number: string;
+  status: OrderDocumentStatus;
+  generated_at: string;
+  created_at: string;
+};
+
+/**
+ * Client document details from public.client_get_order_document (021).
+ * Metadata is the immutable PDF snapshot; no staff fields.
+ */
+export type ClientOrderDocumentDetails = ClientOrderDocumentListItem & {
+  metadata: OrderDocumentMetadata;
+};
+
+/** Minimal document shape accepted by PDF renderer (staff or client). */
+export type OrderDocumentPdfSource = {
+  id: string;
+  order_id: string;
+  document_type: OrderDocumentType;
+  number: string;
   metadata: OrderDocumentMetadata;
 };
 

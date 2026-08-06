@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatPrice } from "@/lib/formatPrice";
@@ -12,6 +13,7 @@ const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
 const CHECKOUT_PATH = "/checkout";
+const REPEAT_NOTICE_KEY = "dekoro_repeat_order_notice";
 
 export default function CartPage() {
   const router = useRouter();
@@ -19,6 +21,29 @@ export default function CartPage() {
   const { items, totalAmount, hasUnpricedItems, setItemQuantity, removeItem } =
     useCart();
   const isEmpty = items.length === 0;
+  const [repeatNotice, setRepeatNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        const raw = window.sessionStorage.getItem(REPEAT_NOTICE_KEY);
+        if (!raw) {
+          return;
+        }
+        window.sessionStorage.removeItem(REPEAT_NOTICE_KEY);
+        setRepeatNotice(raw);
+      } catch {
+        // sessionStorage may be unavailable — ignore.
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function handleCheckout() {
     if (authLoading || isEmpty) {
@@ -36,6 +61,16 @@ export default function CartPage() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
       <h1 className="text-3xl font-bold text-neutral-800">Корзина</h1>
+
+      {repeatNotice && (
+        <div
+          className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          <p className="font-medium">Повтор заказа — часть позиций недоступна</p>
+          <p className="mt-1 whitespace-pre-line">{repeatNotice}</p>
+        </div>
+      )}
 
       {isEmpty ? (
         <p className="mt-6 text-neutral-600">Корзина пуста</p>

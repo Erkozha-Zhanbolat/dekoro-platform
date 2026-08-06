@@ -1,9 +1,17 @@
 import { supabase } from "@/lib/supabase/client";
+import type { Product } from "@/types/product";
 import type {
+  ClientOrderStatusHistoryEntry,
   CreateOrderInput,
   CreateOrderResult,
   DeliveryType,
   OrderStatus,
+} from "@/types/database";
+import {
+  CLIENT_ACTIVE_ORDER_STATUSES,
+  CLIENT_HISTORY_ORDER_STATUSES,
+  isClientActiveOrderStatus,
+  isClientHistoryOrderStatus,
 } from "@/types/database";
 
 /** Human-readable label for orders.delivery_type, shared by the list and detail pages. */
@@ -11,6 +19,13 @@ export const DELIVERY_TYPE_LABELS: Record<DeliveryType, string> = {
   pickup: "Самовывоз со склада DEKORO",
   customer_transport: "Забор транспортом клиента",
   delivery: "Доставка",
+};
+
+export {
+  CLIENT_ACTIVE_ORDER_STATUSES,
+  CLIENT_HISTORY_ORDER_STATUSES,
+  isClientActiveOrderStatus,
+  isClientHistoryOrderStatus,
 };
 
 /** Trims a value and turns an empty/whitespace-only string into null. */
@@ -100,6 +115,8 @@ type OrderListRow = {
   total: number;
   delivery_type: DeliveryType;
   contact_name: string;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   order_items: { quantity: number }[] | null;
 };
 
@@ -112,6 +129,8 @@ export type OrderListItem = {
   total: number;
   delivery_type: DeliveryType;
   contact_name: string;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   itemCount: number;
   totalQuantity: number;
 };
@@ -130,7 +149,7 @@ export async function listOrders(): Promise<OrderListItem[]> {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, status, total, delivery_type, contact_name, order_items(quantity)",
+      "id, order_number, created_at, status, total, delivery_type, contact_name, payment_due_at, reservation_expires_at, order_items(quantity)",
     )
     .order("created_at", { ascending: false });
 
@@ -150,6 +169,8 @@ export async function listOrders(): Promise<OrderListItem[]> {
       total: Number(row.total),
       delivery_type: row.delivery_type,
       contact_name: row.contact_name,
+      payment_due_at: row.payment_due_at,
+      reservation_expires_at: row.reservation_expires_at,
       itemCount: items.length,
       totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
     };
@@ -182,6 +203,8 @@ export type OrderDetail = {
   delivery_type: DeliveryType;
   delivery_address: string | null;
   delivery_comment: string | null;
+  payment_due_at: string | null;
+  reservation_expires_at: string | null;
   items: OrderDetailItem[];
 };
 
@@ -204,7 +227,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, status, subtotal, discount, total, comment, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, order_items(id, product_id, product_name, quantity, unit_price, total:line_total)",
+      "id, order_number, created_at, status, subtotal, discount, total, comment, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, payment_due_at, reservation_expires_at, order_items(id, product_id, product_name, quantity, unit_price, total:line_total)",
     )
     .eq("id", id)
     .single();
@@ -237,6 +260,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     delivery_type: row.delivery_type,
     delivery_address: row.delivery_address,
     delivery_comment: row.delivery_comment,
+    payment_due_at: row.payment_due_at,
+    reservation_expires_at: row.reservation_expires_at,
     items: items.map((item) => ({
       id: item.id,
       product_id: item.product_id,
@@ -246,4 +271,156 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
       total: Number(item.total),
     })),
   };
+}
+
+type ClientStatusHistoryRow = {
+  id: string;
+  order_id: string;
+  from_status: string | null;
+  to_status: string;
+  created_at: string;
+};
+
+/**
+ * Client-safe status transitions via public.client_list_order_status_history
+ * (021). No notes / staff identity. Ownership enforced server-side.
+ */
+export async function listClientOrderStatusHistory(
+  orderId: string,
+): Promise<ClientOrderStatusHistoryEntry[]> {
+  const { data, error } = await supabase.rpc("client_list_order_status_history", {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить историю статусов");
+  }
+
+  return ((data as ClientStatusHistoryRow[] | null) ?? []).map((row) => ({
+    id: row.id,
+    order_id: row.order_id,
+    from_status: (row.from_status as OrderStatus | null) ?? null,
+    to_status: row.to_status as OrderStatus,
+    created_at: row.created_at,
+  }));
+}
+
+export type ActiveOrdersSummary = {
+  total: number;
+  awaitingPayment: number;
+  picking: number;
+  readyForShipment: number;
+  shipped: number;
+};
+
+export function summarizeActiveOrders(orders: OrderListItem[]): ActiveOrdersSummary {
+  const active = orders.filter((o) => isClientActiveOrderStatus(o.status));
+  return {
+    total: active.length,
+    awaitingPayment: active.filter((o) => o.status === "awaiting_payment").length,
+    picking: active.filter((o) => o.status === "picking").length,
+    readyForShipment: active.filter((o) => o.status === "ready_for_shipment").length,
+    shipped: active.filter((o) => o.status === "shipped").length,
+  };
+}
+
+export type RepeatOrderSkipReason =
+  | "not_available"
+  | "no_price"
+  | "out_of_stock";
+
+export type RepeatOrderSkippedItem = {
+  productId: string;
+  productName: string;
+  requestedQuantity: number;
+  reason: RepeatOrderSkipReason;
+};
+
+/** Cart-ready entry — same shape as CartBulkEntry, kept here to avoid cycles. */
+export type RepeatOrderCartEntry = {
+  product: Product;
+  quantity: number;
+};
+
+export type RepeatOrderPlan = {
+  entries: RepeatOrderCartEntry[];
+  skipped: RepeatOrderSkippedItem[];
+  /** Items added with quantity reduced to available stock. */
+  reduced: {
+    productId: string;
+    productName: string;
+    requestedQuantity: number;
+    addedQuantity: number;
+  }[];
+};
+
+const SKIP_REASON_LABELS: Record<RepeatOrderSkipReason, string> = {
+  not_available: "товар недоступен в каталоге",
+  no_price: "нет актуальной цены",
+  out_of_stock: "нет в наличии",
+};
+
+export function repeatOrderSkipReasonLabel(reason: RepeatOrderSkipReason): string {
+  return SKIP_REASON_LABELS[reason];
+}
+
+/**
+ * Builds cart entries from a past order using live catalog prices/stock.
+ * Does not create an order — caller adds to cart and navigates to /cart.
+ */
+export function planRepeatOrder(
+  items: OrderDetailItem[],
+  catalog: Product[],
+): RepeatOrderPlan {
+  const byId = new Map(catalog.map((p) => [p.id, p]));
+  const entries: RepeatOrderCartEntry[] = [];
+  const skipped: RepeatOrderSkippedItem[] = [];
+  const reduced: RepeatOrderPlan["reduced"] = [];
+
+  for (const item of items) {
+    const product = byId.get(item.product_id);
+    if (!product) {
+      skipped.push({
+        productId: item.product_id,
+        productName: item.product_name,
+        requestedQuantity: item.quantity,
+        reason: "not_available",
+      });
+      continue;
+    }
+
+    if (product.salePrice === null || product.salePrice === undefined) {
+      skipped.push({
+        productId: product.id,
+        productName: product.name,
+        requestedQuantity: item.quantity,
+        reason: "no_price",
+      });
+      continue;
+    }
+
+    const available = Math.max(0, Math.floor(product.stock));
+    if (available <= 0) {
+      skipped.push({
+        productId: product.id,
+        productName: product.name,
+        requestedQuantity: item.quantity,
+        reason: "out_of_stock",
+      });
+      continue;
+    }
+
+    const quantity = Math.min(item.quantity, available);
+    entries.push({ product, quantity });
+    if (quantity < item.quantity) {
+      reduced.push({
+        productId: product.id,
+        productName: product.name,
+        requestedQuantity: item.quantity,
+        addedQuantity: quantity,
+      });
+    }
+  }
+
+  return { entries, skipped, reduced };
 }

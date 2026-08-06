@@ -1,4 +1,4 @@
-import type { StaffOrderDocumentDetails } from "@/types/database";
+import type { OrderDocumentPdfSource } from "@/types/database";
 import { DeliveryNotePdfDocument } from "./DeliveryNotePdfDocument";
 import { InvoiceCompanyPdfDocument } from "./InvoiceCompanyPdfDocument";
 import { InvoiceIndividualPdfDocument } from "./InvoiceIndividualPdfDocument";
@@ -7,7 +7,7 @@ import { resolveInvoiceRenderMode } from "./resolveInvoiceTemplate";
 import type { ResolvedSupplierImages } from "./types";
 
 type Props = {
-  document: StaffOrderDocumentDetails;
+  document: OrderDocumentPdfSource;
   images: ResolvedSupplierImages;
 };
 
