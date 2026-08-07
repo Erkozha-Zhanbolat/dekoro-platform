@@ -132,6 +132,12 @@ export default function StaffUsersSettingsPage() {
             <span className="rounded-md bg-[#0F766E]/10 px-3 py-1.5 text-sm font-medium text-[#0F766E]">
               Сотрудники
             </span>
+            <Link
+              href="/staff/settings/data"
+              className={`rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
+            >
+              Управление данными
+            </Link>
           </div>
         </div>
         <button

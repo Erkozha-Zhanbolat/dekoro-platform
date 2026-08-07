@@ -76,6 +76,12 @@ const STAFF_NAV_ITEMS: readonly StaffNavItem[] = [
     enabled: true,
     roles: ["admin"],
   },
+  {
+    href: "/staff/settings/data",
+    label: "Управление данными",
+    enabled: true,
+    roles: ["admin"],
+  },
 ];
 
 /** Nav items visible to a given staff role, in a fixed, predictable order. */

@@ -212,6 +212,12 @@ export default function StaffOrganizationSettingsPage() {
         >
           Сотрудники
         </Link>
+        <Link
+          href="/staff/settings/data"
+          className={`rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
+        >
+          Управление данными
+        </Link>
       </div>
 
       <h2 className="mt-6 text-lg font-semibold text-neutral-800">Организация</h2>

@@ -29,6 +29,7 @@ export type StaffOrderListItem = {
   assigned_manager_id: string | null;
   payment_due_at: string | null;
   reservation_expires_at: string | null;
+  is_test: boolean;
   itemCount: number;
   totalQuantity: number;
 };
@@ -46,6 +47,7 @@ type StaffOrderListRow = {
   assigned_manager_id: string | null;
   payment_due_at: string | null;
   reservation_expires_at: string | null;
+  is_test?: boolean | null;
   order_items: { quantity: number }[] | null;
 };
 
@@ -64,6 +66,7 @@ function mapListRow(row: StaffOrderListRow): StaffOrderListItem {
     assigned_manager_id: row.assigned_manager_id,
     payment_due_at: row.payment_due_at,
     reservation_expires_at: row.reservation_expires_at,
+    is_test: Boolean(row.is_test),
     itemCount: items.length,
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
   };
@@ -72,6 +75,8 @@ function mapListRow(row: StaffOrderListRow): StaffOrderListItem {
 function escapeIlikeValue(value: string): string {
   return value.replace(/[%_]/g, (match) => `\\${match}`);
 }
+
+export type StaffOrdersTestFilter = "all" | "production" | "test";
 
 export type StaffOrdersOpsFilter =
   | "fully_paid_not_moved"
@@ -84,6 +89,8 @@ export type StaffOrdersQuery = {
   status?: OrderStatus | "all";
   /** Server-side / query-side operational filters from dashboard deep-links. */
   ops?: StaffOrdersOpsFilter | null;
+  /** Admin filter: all | production | test. Default all. */
+  testFilter?: StaffOrdersTestFilter;
   limit?: number;
 };
 
@@ -95,13 +102,19 @@ export async function getStaffOrders(
   let request = supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, status, total, delivery_type, contact_name, contact_phone, contact_email, assigned_manager_id, payment_due_at, reservation_expires_at, order_items(quantity)",
+      "id, order_number, created_at, status, total, delivery_type, contact_name, contact_phone, contact_email, assigned_manager_id, payment_due_at, reservation_expires_at, is_test, order_items(quantity)",
     )
     .order("created_at", { ascending: false })
     .limit(query.limit ?? DEFAULT_STAFF_ORDERS_LIMIT);
 
   if (query.status && query.status !== "all") {
     request = request.eq("status", query.status);
+  }
+
+  if (query.testFilter === "production") {
+    request = request.eq("is_test", false);
+  } else if (query.testFilter === "test") {
+    request = request.eq("is_test", true);
   }
 
   if (query.ops === "unassigned") {

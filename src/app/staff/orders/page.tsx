@@ -16,7 +16,11 @@ import {
   getStaffOrders,
   STAFF_STATUS_FILTER_OPTIONS,
 } from "@/lib/staff/orders";
-import type { StaffOrderListItem, StaffOrdersOpsFilter } from "@/lib/staff/orders";
+import type {
+  StaffOrderListItem,
+  StaffOrdersOpsFilter,
+  StaffOrdersTestFilter,
+} from "@/lib/staff/orders";
 import { listStaffOrdersPaymentSummaries } from "@/lib/staff/payments";
 import type { StaffOrderPaymentListSummary } from "@/types/database";
 import { useProfile } from "@/context/ProfileContext";
@@ -97,6 +101,7 @@ function StaffOrdersPageContent({
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">(urlStatus);
   const [paymentFilter, setPaymentFilter] = useState<StaffPaymentListFilter>(urlPayment);
   const [opsFilter, setOpsFilter] = useState<StaffOrdersOpsFilter | null>(urlOps);
+  const [testFilter, setTestFilter] = useState<StaffOrdersTestFilter>("all");
 
   const [orders, setOrders] = useState<StaffOrderListItem[]>([]);
   const [paymentByOrderId, setPaymentByOrderId] = useState<
@@ -113,7 +118,7 @@ function StaffOrdersPageContent({
     return () => clearTimeout(timeout);
   }, [searchInput]);
 
-  const currentKey = `${debouncedSearch}:${statusFilter}:${opsFilter ?? ""}:${reloadToken}:${canSeePayments ? "pay" : "nopay"}`;
+  const currentKey = `${debouncedSearch}:${statusFilter}:${opsFilter ?? ""}:${testFilter}:${reloadToken}:${canSeePayments ? "pay" : "nopay"}`;
 
   useEffect(() => {
     if (loadedKey === currentKey) {
@@ -126,6 +131,7 @@ function StaffOrdersPageContent({
       search: debouncedSearch,
       status: statusFilter,
       ops: opsFilter,
+      testFilter,
       limit: ORDERS_LIST_LIMIT,
     })
       .then(async (result) => {
@@ -177,7 +183,7 @@ function StaffOrdersPageContent({
     return () => {
       ignore = true;
     };
-  }, [debouncedSearch, statusFilter, opsFilter, currentKey, loadedKey, canSeePayments]);
+  }, [debouncedSearch, statusFilter, opsFilter, testFilter, currentKey, loadedKey, canSeePayments]);
 
   const loading = loadedKey !== currentKey;
 
@@ -280,6 +286,18 @@ function StaffOrdersPageContent({
             </option>
           ))}
         </select>
+        <select
+          value={testFilter}
+          onChange={(event) =>
+            setTestFilter(event.target.value as StaffOrdersTestFilter)
+          }
+          className={`w-full rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-800 outline-none transition-colors focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] sm:w-56 ${focusRing}`}
+          aria-label="Фильтр тестовых заказов"
+        >
+          <option value="all">Все</option>
+          <option value="production">Рабочие</option>
+          <option value="test">Тестовые</option>
+        </select>
         {canSeePayments && (
           <select
             value={paymentFilter}
@@ -353,7 +371,14 @@ function StaffOrdersPageContent({
                   return (
                     <tr key={order.id} className="border-b border-neutral-100 last:border-b-0">
                       <td className="px-5 py-3 font-medium text-neutral-800">
-                        {order.order_number}
+                        <span className="inline-flex flex-wrap items-center gap-2">
+                          {order.order_number}
+                          {order.is_test ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                              Тестовый
+                            </span>
+                          ) : null}
+                        </span>
                       </td>
                       <td className="px-5 py-3 text-neutral-600">
                         {new Date(order.created_at).toLocaleDateString("ru-RU")}
@@ -420,7 +445,16 @@ function StaffOrdersPageContent({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium text-neutral-800">{order.order_number}</p>
+                      <p className="font-medium text-neutral-800">
+                        <span className="inline-flex flex-wrap items-center gap-2">
+                          {order.order_number}
+                          {order.is_test ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                              Тестовый
+                            </span>
+                          ) : null}
+                        </span>
+                      </p>
                       <p className="mt-0.5 text-sm text-neutral-500">{order.contact_name}</p>
                     </div>
                     <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
