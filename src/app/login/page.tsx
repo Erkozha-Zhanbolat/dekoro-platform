@@ -99,6 +99,15 @@ function LoginForm() {
         </button>
       </form>
 
+      <p className="mt-4 text-sm text-neutral-600">
+        <Link
+          href="/forgot-password"
+          className={`font-medium text-[#0F766E] hover:underline ${focusRing}`}
+        >
+          Забыли пароль?
+        </Link>
+      </p>
+
       <p className="mt-6 text-sm text-neutral-600">
         Нет аккаунта?{" "}
         <Link href={registerHref} className={`font-medium text-[#0F766E] hover:underline ${focusRing}`}>

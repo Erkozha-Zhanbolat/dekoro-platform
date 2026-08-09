@@ -217,7 +217,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const redirectTo = `${getAppBaseUrl()}/login`;
+    // Invite onboarding: confirm invite session → set password → /staff.
+    // Never land invited staff on /login without a password setup step.
+    const redirectTo = `${getAppBaseUrl()}/set-password`;
     const inviteMeta = {
       dekoro_staff_invite: true,
       staff_role: role,
