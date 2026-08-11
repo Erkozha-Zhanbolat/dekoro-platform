@@ -212,6 +212,7 @@ export type StaffOrderDetail = {
   discount: number;
   total: number;
   comment: string | null;
+  customer_id: string | null;
   contact_name: string;
   contact_phone: string;
   contact_email: string | null;
@@ -238,6 +239,7 @@ type StaffOrderDetailRow = {
   discount: number;
   total: number;
   comment: string | null;
+  customer_id: string | null;
   contact_name: string;
   contact_phone: string;
   contact_email: string | null;
@@ -254,7 +256,7 @@ export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | 
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, updated_at, status, subtotal, discount, total, comment, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, assigned_manager_id, payment_due_at, reservation_expires_at, order_items(id, product_id, product_name, quantity, unit_price, total:line_total)",
+      "id, order_number, created_at, updated_at, status, subtotal, discount, total, comment, customer_id, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, assigned_manager_id, payment_due_at, reservation_expires_at, order_items(id, product_id, product_name, quantity, unit_price, total:line_total)",
     )
     .eq("id", id)
     .single();
@@ -294,6 +296,7 @@ export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | 
     discount: Number(row.discount),
     total: Number(row.total),
     comment: row.comment,
+    customer_id: row.customer_id,
     contact_name: row.contact_name,
     contact_phone: row.contact_phone,
     contact_email: row.contact_email,

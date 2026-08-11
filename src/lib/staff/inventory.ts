@@ -17,19 +17,21 @@ const DEFAULT_PRODUCT_SEARCH_LIMIT = 50;
 
 /**
  * Searches active products by name/SKU, together with their current stock
- * at the single active warehouse (physical / reserved / available) and a
- * default (non-personalized) resolved price. Pass an empty query to list
- * the first `limit` active products.
+ * at the single active warehouse (physical / reserved / available) and the
+ * effective price for the optional customer (Stage 28). Pass an empty query
+ * to list the first `limit` active products.
  */
 export async function searchStaffProducts(
   query: string,
   limit: number = DEFAULT_PRODUCT_SEARCH_LIMIT,
+  customerId: string | null = null,
 ): Promise<StaffProductSearchResult[]> {
   const trimmed = query.trim();
 
   const { data, error } = await supabase.rpc("staff_search_products", {
     p_query: trimmed.length > 0 ? trimmed : null,
     p_limit: limit,
+    p_customer_id: customerId,
   });
 
   if (error) {

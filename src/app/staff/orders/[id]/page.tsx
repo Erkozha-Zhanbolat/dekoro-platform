@@ -1038,6 +1038,7 @@ export default function StaffOrderDetailPage() {
       {isAddItemModalOpen && (
         <StaffAddOrderItemModal
           orderId={order.id}
+          customerId={order.customer_id ?? null}
           onClose={() => setIsAddItemModalOpen(false)}
           onAdded={() => {
             setIsAddItemModalOpen(false);

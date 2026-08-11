@@ -77,6 +77,7 @@ function mapCustomerRow(row: Customer): Customer {
     created_by: row.created_by,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    price_group_id: row.price_group_id ?? null,
   };
 }
 
@@ -146,6 +147,9 @@ export async function getStaffCustomer(customerId: string): Promise<StaffCustome
     is_registered: row.is_registered,
     orders_count: Number(row.orders_count),
     last_order_at: row.last_order_at,
+    price_group_id: row.price_group_id ?? null,
+    price_group_name: row.price_group_name ?? null,
+    price_group_is_default: Boolean(row.price_group_is_default),
   };
 }
 

@@ -12,7 +12,16 @@ import {
 } from "@/lib/staff/customers";
 import type { StaffCustomerDetails, StaffCustomerOrderListItem } from "@/lib/staff/customers";
 import { getStaffCustomerReceivables } from "@/lib/staff/payments";
-import type { CustomerSource, StaffCustomerReceivables } from "@/types/database";
+import {
+  deleteCustomerProductPrice,
+  listCustomerProductPrices,
+  listStaffPriceGroups,
+  setCustomerPriceGroup,
+  upsertCustomerProductPrice,
+} from "@/lib/staff/pricing";
+import { searchStaffProducts } from "@/lib/staff/inventory";
+import type { StaffProductSearchResult } from "@/lib/staff/inventory";
+import type { CustomerProductPriceRow, CustomerSource, PriceGroup, StaffCustomerReceivables } from "@/types/database";
 import {
   CUSTOMER_SOURCE_LABELS,
   CUSTOMER_SOURCES,
@@ -25,6 +34,20 @@ const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
 const inputClass = `w-full rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] ${focusRing}`;
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+function parseOptionalNumber(raw: string): number | null {
+  const trimmed = raw.trim().replace(",", ".");
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatOptionalPrice(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return formatPrice(value);
+}
 
 function formatDateTime(iso: string | null): string {
   if (!iso) {
@@ -44,6 +67,7 @@ export default function StaffCustomerDetailPage() {
   const customerId = typeof params.id === "string" ? params.id : "";
   const { profile } = useProfile();
   const canManage = profile?.role === "manager" || profile?.role === "admin";
+  const canEditPricing = profile?.role === "admin";
   const canCreateOrder = canManage;
 
   const [customer, setCustomer] = useState<StaffCustomerDetails | null>(null);
@@ -67,6 +91,29 @@ export default function StaffCustomerDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [tab, setTab] = useState<"info" | "activity">("info");
+
+  const [priceGroups, setPriceGroups] = useState<PriceGroup[]>([]);
+  const [selectedPriceGroupId, setSelectedPriceGroupId] = useState("");
+  const [priceGroupSaving, setPriceGroupSaving] = useState(false);
+  const [priceGroupError, setPriceGroupError] = useState<string | null>(null);
+
+  const [individualPrices, setIndividualPrices] = useState<CustomerProductPriceRow[]>([]);
+  const [individualPricesError, setIndividualPricesError] = useState<string | null>(null);
+  const [individualPriceDrafts, setIndividualPriceDrafts] = useState<Record<string, string>>({});
+  const [savingIndividualProductId, setSavingIndividualProductId] = useState<string | null>(null);
+  const [deletingIndividualProductId, setDeletingIndividualProductId] = useState<string | null>(null);
+
+  const [addProductSearch, setAddProductSearch] = useState("");
+  const [debouncedAddProductSearch, setDebouncedAddProductSearch] = useState("");
+  const [addProductResults, setAddProductResults] = useState<StaffProductSearchResult[]>([]);
+  const [addProductSearchError, setAddProductSearchError] = useState<string | null>(null);
+  const [addProductSearchedTerm, setAddProductSearchedTerm] = useState<string | undefined>(
+    undefined,
+  );
+  const [selectedAddProduct, setSelectedAddProduct] = useState<StaffProductSearchResult | null>(null);
+  const [addIndividualPrice, setAddIndividualPrice] = useState("");
+  const [addIndividualBusy, setAddIndividualBusy] = useState(false);
+  const [addIndividualError, setAddIndividualError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!customerId) {
@@ -99,6 +146,7 @@ export default function StaffCustomerDetailPage() {
           setCity(customerResult.city ?? "");
           setSource(customerResult.source ?? "staff");
           setNotes(customerResult.notes ?? "");
+          setSelectedPriceGroupId(customerResult.price_group_id ?? "");
 
           getStaffCustomerReceivables(customerId)
             .then((recv) => {
@@ -137,6 +185,182 @@ export default function StaffCustomerDetailPage() {
       ignore = true;
     };
   }, [customerId]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDebouncedAddProductSearch(addProductSearch.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timeout);
+  }, [addProductSearch]);
+
+  function syncIndividualPriceDrafts(rows: CustomerProductPriceRow[]) {
+    const next: Record<string, string> = {};
+    for (const row of rows) {
+      if (row.individual_price != null) {
+        next[row.product_id] = String(row.individual_price);
+      }
+    }
+    setIndividualPriceDrafts(next);
+  }
+
+  async function refreshIndividualPrices() {
+    if (!customerId) return;
+    const rows = await listCustomerProductPrices(customerId);
+    setIndividualPrices(rows);
+    syncIndividualPriceDrafts(rows);
+    setIndividualPricesError(null);
+  }
+
+  useEffect(() => {
+    if (!customerId) return;
+
+    let ignore = false;
+
+    Promise.all([listStaffPriceGroups(false), listCustomerProductPrices(customerId)])
+      .then(([groups, prices]) => {
+        if (ignore) return;
+        setPriceGroups(groups);
+        setIndividualPrices(prices);
+        syncIndividualPriceDrafts(prices);
+        setIndividualPricesError(null);
+        setPriceGroupError(null);
+      })
+      .catch((error: unknown) => {
+        if (ignore) return;
+        setIndividualPricesError(
+          error instanceof Error ? error.message : "Не удалось загрузить цены",
+        );
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [customerId]);
+
+  useEffect(() => {
+    if (!canEditPricing || !customerId) return;
+    if (addProductSearchedTerm === debouncedAddProductSearch) return;
+
+    let ignore = false;
+
+    searchStaffProducts(debouncedAddProductSearch, 50, customerId)
+      .then((results) => {
+        if (ignore) return;
+        setAddProductResults(results);
+        setAddProductSearchError(null);
+        setAddProductSearchedTerm(debouncedAddProductSearch);
+      })
+      .catch((error: unknown) => {
+        if (ignore) return;
+        setAddProductResults([]);
+        setAddProductSearchError(
+          error instanceof Error ? error.message : "Не удалось найти товары",
+        );
+        setAddProductSearchedTerm(debouncedAddProductSearch);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [canEditPricing, customerId, debouncedAddProductSearch, addProductSearchedTerm]);
+
+  const addProductSearchLoading = addProductSearchedTerm !== debouncedAddProductSearch;
+
+  async function handleSavePriceGroup() {
+    if (!customer || !canEditPricing || priceGroupSaving || !selectedPriceGroupId) return;
+
+    setPriceGroupSaving(true);
+    setPriceGroupError(null);
+
+    try {
+      await setCustomerPriceGroup(customer.id, selectedPriceGroupId);
+      const refreshed = await getStaffCustomer(customer.id);
+      if (refreshed) {
+        setCustomer(refreshed);
+        setSelectedPriceGroupId(refreshed.price_group_id ?? selectedPriceGroupId);
+      }
+      await refreshIndividualPrices();
+    } catch (error: unknown) {
+      setPriceGroupError(error instanceof Error ? error.message : "Не удалось сохранить группу");
+    } finally {
+      setPriceGroupSaving(false);
+    }
+  }
+
+  async function handleSaveIndividualPrice(productId: string) {
+    if (!customer || !canEditPricing || savingIndividualProductId) return;
+
+    const price = parseOptionalNumber(individualPriceDrafts[productId] ?? "");
+    if (price == null || price < 0) {
+      setIndividualPricesError("Укажите корректную индивидуальную цену");
+      return;
+    }
+
+    setSavingIndividualProductId(productId);
+    setIndividualPricesError(null);
+
+    try {
+      await upsertCustomerProductPrice({
+        customerId: customer.id,
+        productId,
+        price,
+      });
+      await refreshIndividualPrices();
+    } catch (error: unknown) {
+      setIndividualPricesError(error instanceof Error ? error.message : "Не удалось сохранить цену");
+    } finally {
+      setSavingIndividualProductId(null);
+    }
+  }
+
+  async function handleDeleteIndividualPrice(productId: string) {
+    if (!customer || !canEditPricing || deletingIndividualProductId) return;
+
+    setDeletingIndividualProductId(productId);
+    setIndividualPricesError(null);
+
+    try {
+      await deleteCustomerProductPrice({
+        customerId: customer.id,
+        productId,
+      });
+      await refreshIndividualPrices();
+    } catch (error: unknown) {
+      setIndividualPricesError(error instanceof Error ? error.message : "Не удалось удалить цену");
+    } finally {
+      setDeletingIndividualProductId(null);
+    }
+  }
+
+  async function handleAddIndividualPrice(event: React.FormEvent) {
+    event.preventDefault();
+    if (!customer || !canEditPricing || addIndividualBusy || !selectedAddProduct) return;
+
+    const price = parseOptionalNumber(addIndividualPrice);
+    if (price == null || price < 0) {
+      setAddIndividualError("Укажите корректную цену");
+      return;
+    }
+
+    setAddIndividualBusy(true);
+    setAddIndividualError(null);
+
+    try {
+      await upsertCustomerProductPrice({
+        customerId: customer.id,
+        productId: selectedAddProduct.product_id,
+        price,
+      });
+      setSelectedAddProduct(null);
+      setAddProductSearch("");
+      setAddIndividualPrice("");
+      await refreshIndividualPrices();
+    } catch (error: unknown) {
+      setAddIndividualError(error instanceof Error ? error.message : "Не удалось добавить цену");
+    } finally {
+      setAddIndividualBusy(false);
+    }
+  }
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
@@ -454,6 +678,239 @@ export default function StaffCustomerDetailPage() {
           )}
         </div>
       )}
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="text-lg font-semibold text-neutral-800">Ценовая категория</h2>
+        {canEditPricing ? (
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Группа
+              </span>
+              <select
+                value={selectedPriceGroupId}
+                onChange={(event) => setSelectedPriceGroupId(event.target.value)}
+                className={inputClass}
+              >
+                <option value="">Выберите группу</option>
+                {priceGroups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                    {group.is_default ? " (по умолчанию)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={
+                priceGroupSaving ||
+                !selectedPriceGroupId ||
+                selectedPriceGroupId === (customer.price_group_id ?? "")
+              }
+              onClick={() => {
+                handleSavePriceGroup().catch(() => undefined);
+              }}
+              className={`rounded-md bg-[#0F766E] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:bg-neutral-300 ${focusRing}`}
+            >
+              {priceGroupSaving ? "Сохранение..." : "Сохранить"}
+            </button>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-neutral-800">
+            {customer.price_group_name ?? "—"}
+            {customer.price_group_is_default ? " (по умолчанию)" : ""}
+          </p>
+        )}
+        {priceGroupError && (
+          <p className="mt-3 text-sm text-red-600" role="alert">
+            {priceGroupError}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="text-lg font-semibold text-neutral-800">Индивидуальные спеццены</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          Переопределения цен для отдельных товаров. В таблице только активные индивидуальные цены.
+        </p>
+
+        {canEditPricing && (
+          <form
+            onSubmit={handleAddIndividualPrice}
+            className="mt-4 flex flex-col gap-3 rounded-md border border-neutral-100 bg-neutral-50 p-4"
+          >
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Поиск товара
+              </span>
+              <input
+                type="search"
+                value={addProductSearch}
+                onChange={(event) => {
+                  setAddProductSearch(event.target.value);
+                  setSelectedAddProduct(null);
+                }}
+                placeholder="Название или артикул"
+                className={inputClass}
+              />
+            </label>
+            {addProductSearchError && (
+              <p className="text-sm text-red-600" role="alert">
+                {addProductSearchError}
+              </p>
+            )}
+            {addProductSearchLoading ? (
+              <p className="text-sm text-neutral-500">Поиск...</p>
+            ) : (
+              addProductResults.length > 0 &&
+              !selectedAddProduct && (
+                <ul className="max-h-40 overflow-y-auto rounded-md border border-neutral-200 bg-white">
+                  {addProductResults.map((product) => (
+                    <li key={product.product_id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedAddProduct(product);
+                          setAddProductSearch(`${product.sku} — ${product.name}`);
+                        }}
+                        className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-neutral-50 ${focusRing}`}
+                      >
+                        <span className="font-medium text-neutral-800">{product.name}</span>
+                        <span className="text-xs text-neutral-500">
+                          {product.sku}
+                          {product.price != null ? ` · ${formatPrice(product.price)}` : ""}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )
+            )}
+            {selectedAddProduct && (
+              <p className="text-sm text-neutral-700">
+                Выбран: {selectedAddProduct.name} ({selectedAddProduct.sku})
+              </p>
+            )}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Спеццена
+              </span>
+              <input
+                value={addIndividualPrice}
+                onChange={(event) => setAddIndividualPrice(event.target.value)}
+                className={inputClass}
+                inputMode="decimal"
+                placeholder="Цена"
+              />
+            </label>
+            {addIndividualError && (
+              <p className="text-sm text-red-600" role="alert">
+                {addIndividualError}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={addIndividualBusy || !selectedAddProduct}
+              className={`self-start rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:bg-neutral-300 ${focusRing}`}
+            >
+              {addIndividualBusy ? "Добавление..." : "Добавить спеццену"}
+            </button>
+          </form>
+        )}
+
+        {individualPricesError && (
+          <p className="mt-3 text-sm text-red-600" role="alert">
+            {individualPricesError}
+          </p>
+        )}
+
+        {individualPrices.length === 0 ? (
+          <p className="mt-4 text-sm text-neutral-500">Спеццен пока нет</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  <th className="px-3 py-3">Товар</th>
+                  <th className="px-3 py-3 text-right">Базовая</th>
+                  <th className="px-3 py-3 text-right">Цена категории</th>
+                  <th className="px-3 py-3 text-right">Спеццена</th>
+                  <th className="px-3 py-3 text-right">Итоговая</th>
+                  {canEditPricing && <th className="px-3 py-3" />}
+                </tr>
+              </thead>
+              <tbody>
+                {individualPrices.map((row) => {
+                  const rowSaving = savingIndividualProductId === row.product_id;
+                  const rowDeleting = deletingIndividualProductId === row.product_id;
+
+                  return (
+                    <tr key={row.product_id} className="border-b border-neutral-100 last:border-0">
+                      <td className="px-3 py-3">
+                        <p className="font-medium text-neutral-800">{row.name}</p>
+                        <p className="text-xs text-neutral-500">{row.sku}</p>
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums text-neutral-600">
+                        {formatOptionalPrice(row.base_price)}
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums text-neutral-600">
+                        {formatOptionalPrice(row.group_price)}
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums text-neutral-800">
+                        {canEditPricing ? (
+                          <input
+                            value={individualPriceDrafts[row.product_id] ?? ""}
+                            onChange={(event) => {
+                              setIndividualPriceDrafts((prev) => ({
+                                ...prev,
+                                [row.product_id]: event.target.value,
+                              }));
+                            }}
+                            className={`${inputClass} ml-auto max-w-[120px] text-right`}
+                            inputMode="decimal"
+                          />
+                        ) : (
+                          formatOptionalPrice(row.individual_price)
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums font-medium text-neutral-800">
+                        {formatOptionalPrice(row.effective_price)}
+                      </td>
+                      {canEditPricing && (
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <button
+                              type="button"
+                              disabled={rowSaving || rowDeleting}
+                              onClick={() => {
+                                handleSaveIndividualPrice(row.product_id).catch(() => undefined);
+                              }}
+                              className={`rounded-md bg-[#0F766E] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#0c5f58] disabled:opacity-60 ${focusRing}`}
+                            >
+                              {rowSaving ? "..." : "Сохранить"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={rowSaving || rowDeleting}
+                              onClick={() => {
+                                handleDeleteIndividualPrice(row.product_id).catch(() => undefined);
+                              }}
+                              className={`text-xs font-medium text-neutral-500 hover:text-red-600 disabled:opacity-60 ${focusRing}`}
+                            >
+                              {rowDeleting ? "..." : "Удалить"}
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-semibold text-neutral-800">Дебиторка</h2>

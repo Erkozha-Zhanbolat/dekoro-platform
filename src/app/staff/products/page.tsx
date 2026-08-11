@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
+import StaffBulkSetPricesModal from "@/components/staff/StaffBulkSetPricesModal";
 import { StaffProductPhotoThumb } from "@/components/staff/StaffProductPhotoThumb";
 import { formatPrice } from "@/lib/formatPrice";
 import {
@@ -39,6 +40,7 @@ export default function StaffProductsPage() {
   const { profile, profileLoading } = useProfile();
   const canRead = canReadProducts(profile?.role);
   const canManage = canManageProducts(profile?.role);
+  const canBulkPrice = profile?.role === "admin";
 
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -56,6 +58,10 @@ export default function StaffProductsPage() {
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkOk, setBulkOk] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profileLoading && profile && !canRead) {
@@ -93,6 +99,8 @@ export default function StaffProductsPage() {
         setCategories(categoryRows);
         setLoadError(null);
         setLoadedKey(listKey);
+        setSelectedIds(new Set());
+        setBulkOk(null);
       })
       .catch((error: unknown) => {
         if (ignore) return;
@@ -104,6 +112,33 @@ export default function StaffProductsPage() {
       ignore = true;
     };
   }, [canRead, debouncedSearch, categoryFilter, statusFilter, listKey, loadedKey]);
+
+  const allVisibleSelected =
+    products.length > 0 && products.every((p) => selectedIds.has(p.id));
+
+  function toggleProduct(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setBulkOk(null);
+  }
+
+  function toggleSelectAllVisible() {
+    setSelectedIds((prev) => {
+      if (products.length > 0 && products.every((p) => prev.has(p.id))) {
+        return new Set();
+      }
+      return new Set(products.map((p) => p.id));
+    });
+    setBulkOk(null);
+  }
+
+  function reloadProducts() {
+    setLoadedKey(undefined);
+  }
 
   const topCategories = useMemo(
     () => categories.filter((c) => c.parent_id === null),
@@ -357,6 +392,39 @@ export default function StaffProductsPage() {
         </p>
       )}
 
+      {bulkOk && (
+        <p className="rounded-md border border-[#0F766E]/20 bg-[#0F766E]/5 px-4 py-3 text-sm text-[#0F766E]" role="status">
+          {bulkOk}
+        </p>
+      )}
+
+      {canBulkPrice && selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#0F766E]/30 bg-[#0F766E]/5 px-4 py-3">
+          <p className="text-sm text-neutral-700">
+            Выбрано: <span className="font-semibold">{selectedIds.size}</span>
+            {products.length > 0 ? (
+              <span className="text-neutral-500"> (на экране: {products.length})</span>
+            ) : null}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className={`rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 ${focusRing}`}
+            >
+              Снять выбор
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkModalOpen(true)}
+              className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+            >
+              Задать цены
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         {loading ? (
           <p className="px-5 py-6 text-sm text-neutral-500">Загрузка...</p>
@@ -370,11 +438,26 @@ export default function StaffProductsPage() {
           <table className="w-full min-w-[960px] text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
+                {canBulkPrice && (
+                  <th className="px-4 py-3">
+                    <label className="inline-flex items-center gap-2 font-medium normal-case tracking-normal text-neutral-600">
+                      <input
+                        type="checkbox"
+                        className="accent-[#0F766E]"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAllVisible}
+                        aria-label={`Выбрать все на странице (до ${LIST_LIMIT})`}
+                        title={`Выбрать все на странице (до ${LIST_LIMIT})`}
+                      />
+                      <span className="hidden sm:inline">Стр.</span>
+                    </label>
+                  </th>
+                )}
                 <th className="px-4 py-3">Фото</th>
                 <th className="px-4 py-3">Артикул</th>
                 <th className="px-4 py-3">Название</th>
                 <th className="px-4 py-3">Категория</th>
-                <th className="px-4 py-3 text-right">Цена</th>
+                <th className="px-4 py-3 text-right">Базовая</th>
                 <th className="px-4 py-3 text-right">Остаток</th>
                 <th className="px-4 py-3">Статус</th>
                 <th className="px-4 py-3" />
@@ -383,6 +466,17 @@ export default function StaffProductsPage() {
             <tbody>
               {products.map((product) => (
                 <tr key={product.id} className="border-b border-neutral-100 last:border-0">
+                  {canBulkPrice && (
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        className="accent-[#0F766E]"
+                        checked={selectedIds.has(product.id)}
+                        onChange={() => toggleProduct(product.id)}
+                        aria-label={`Выбрать ${product.sku}`}
+                      />
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <StaffProductPhotoThumb
                       path={product.main_photo_path}
@@ -422,6 +516,34 @@ export default function StaffProductsPage() {
           </table>
         )}
       </div>
+
+      {canBulkPrice && !loading && products.length > 0 && (
+        <p className="text-xs text-neutral-500">
+          На странице: {products.length} из найденных (лимит {LIST_LIMIT}). Это не весь каталог.{" "}
+          <button
+            type="button"
+            onClick={toggleSelectAllVisible}
+            className={`font-medium text-[#0F766E] hover:underline ${focusRing}`}
+          >
+            {allVisibleSelected
+              ? "Снять выбор со страницы"
+              : `Выбрать все на странице (до ${LIST_LIMIT})`}
+          </button>
+        </p>
+      )}
+
+      {bulkModalOpen && (
+        <StaffBulkSetPricesModal
+          productIds={[...selectedIds]}
+          onClose={() => setBulkModalOpen(false)}
+          onApplied={() => {
+            setBulkModalOpen(false);
+            setBulkOk(`Цены обновлены для ${selectedIds.size} товар(ов)`);
+            setSelectedIds(new Set());
+            reloadProducts();
+          }}
+        />
+      )}
     </div>
   );
 }

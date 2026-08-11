@@ -133,6 +133,12 @@ export default function StaffUsersSettingsPage() {
               Сотрудники
             </span>
             <Link
+              href="/staff/settings/pricing"
+              className={`rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
+            >
+              Цены
+            </Link>
+            <Link
               href="/staff/settings/data"
               className={`rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
             >

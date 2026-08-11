@@ -101,6 +101,8 @@ export interface Customer {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Stage 28 — customer's assigned price group (default group when unset). */
+  price_group_id?: string | null;
 }
 
 /** Row returned by public.staff_search_customers(p_query, p_limit). */
@@ -141,6 +143,9 @@ export type StaffCustomerDetails = {
   is_registered: boolean;
   orders_count: number;
   last_order_at: string | null;
+  price_group_id: string | null;
+  price_group_name: string | null;
+  price_group_is_default: boolean;
 };
 
 export interface Profile {
@@ -355,11 +360,69 @@ export interface ProductAvailability {
 export interface PriceGroup {
   id: string;
   name: string;
+  code: string;
   description: string | null;
+  sort_order: number;
   is_default: boolean;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
+
+export type PriceSource = "individual" | "legacy_company" | "price_group" | "base";
+
+/** Payload action for admin_bulk_update_product_prices. */
+export type BulkPriceAction = "keep" | "set" | "reset";
+
+export type BulkProductPricesPayload = {
+  base: { action: "keep" } | { action: "set"; price: number };
+  groups: Array<
+    | { price_group_id: string; action: "keep" }
+    | { price_group_id: string; action: "set"; price: number }
+    | { price_group_id: string; action: "reset" }
+  >;
+};
+
+export type BulkProductPricesResult = {
+  updated_products: number;
+  base_updates: number;
+  group_sets: number;
+  group_resets: number;
+};
+
+/** Row from staff_get_product_prices. */
+export type ProductGroupPriceRow = {
+  price_group_id: string;
+  price_group_name: string;
+  price_group_code: string;
+  sort_order: number;
+  is_active: boolean;
+  is_default: boolean;
+  price: number | null;
+  has_explicit_price: boolean;
+};
+
+/** Row from admin_list_pricing_matrix. */
+export type PricingMatrixRow = {
+  product_id: string;
+  sku: string;
+  name: string;
+  category_name: string | null;
+  base_price: number | null;
+  group_prices: Record<string, number>;
+};
+
+/** Row from staff_list_customer_product_prices (individual overrides only). */
+export type CustomerProductPriceRow = {
+  product_id: string;
+  sku: string;
+  name: string;
+  base_price: number | null;
+  group_price: number | null;
+  individual_price: number | null;
+  effective_price: number | null;
+  price_source: PriceSource;
+};
 
 export interface ProductPrice {
   id: string;

@@ -32,10 +32,12 @@ function AvailabilityBadge({ available }: { available: number }) {
 
 export default function StaffAddOrderItemModal({
   orderId,
+  customerId = null,
   onClose,
   onAdded,
 }: {
   orderId: string;
+  customerId?: string | null;
   onClose: () => void;
   onAdded: () => void;
 }) {
@@ -60,7 +62,7 @@ export default function StaffAddOrderItemModal({
 
     let ignore = false;
 
-    searchStaffProducts(debouncedSearch)
+    searchStaffProducts(debouncedSearch, 50, customerId)
       .then((result) => {
         if (ignore) {
           return;
@@ -80,7 +82,7 @@ export default function StaffAddOrderItemModal({
     return () => {
       ignore = true;
     };
-  }, [debouncedSearch, searchedTerm]);
+  }, [debouncedSearch, searchedTerm, customerId]);
 
   const loading = searchedTerm !== debouncedSearch;
 

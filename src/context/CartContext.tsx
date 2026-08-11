@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Product } from "@/types/product";
 import { trackEvent } from "@/lib/analytics/track";
+import { useCatalog } from "@/context/CatalogContext";
 
 function isProductUuid(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -59,6 +60,46 @@ const CartContext = createContext<CartContextValue | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
+  const { products: catalogProducts } = useCatalog();
+
+  // Keep cart display prices in sync with the latest catalog (server is still
+  // the source of truth at checkout via create_order → get_product_price).
+  useEffect(() => {
+    if (catalogProducts.length === 0) {
+      return;
+    }
+    const byId = new Map(catalogProducts.map((product) => [product.id, product]));
+    queueMicrotask(() => {
+      setItems((current) => {
+        if (current.length === 0) {
+          return current;
+        }
+        let changed = false;
+        const next = current.map((item) => {
+          const fresh = byId.get(item.product.id);
+          if (!fresh) {
+            return item;
+          }
+          if (
+            fresh.salePrice === item.product.salePrice
+            && fresh.stock === item.product.stock
+          ) {
+            return item;
+          }
+          changed = true;
+          return {
+            ...item,
+            product: {
+              ...item.product,
+              salePrice: fresh.salePrice,
+              stock: fresh.stock,
+            },
+          };
+        });
+        return changed ? next : current;
+      });
+    });
+  }, [catalogProducts]);
 
   const addToCart = useCallback((product: Product, quantity: number) => {
     if (quantity <= 0) {
