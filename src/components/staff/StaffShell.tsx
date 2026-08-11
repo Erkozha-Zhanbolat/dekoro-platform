@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { USER_ROLE_LABELS } from "@/types/database";
 import type { Profile } from "@/types/database";
 import { getStaffNavItems } from "@/components/staff/staffNav";
+import StaffNotificationBell from "@/components/staff/StaffNotificationBell";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -178,7 +179,8 @@ export default function StaffShell({
 
           <span className="text-sm font-semibold text-neutral-800 md:hidden">DEKORO Staff</span>
 
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-3 sm:gap-4">
+            <StaffNotificationBell profileId={profile.id} />
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium text-neutral-800">{profile.full_name}</p>
               <p className="text-xs text-neutral-500">{roleLabel}</p>

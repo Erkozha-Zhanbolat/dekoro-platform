@@ -1220,6 +1220,44 @@ export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string>
   payment_shortfall_after_reversal: "Недофинансирование после сторно",
 };
 
+/** Staff in-app notification types (029_staff_notifications.sql). */
+export type StaffNotificationType =
+  | "new_order"
+  | "payment_received"
+  | "payment_overdue"
+  | "order_paid"
+  | "picking_started"
+  | "order_ready"
+  | "order_shipped"
+  | "low_stock"
+  | "customer_registered";
+
+export const STAFF_NOTIFICATION_TYPE_LABELS: Record<StaffNotificationType, string> = {
+  new_order: "Новый заказ",
+  payment_received: "Оплата получена",
+  payment_overdue: "Просрочка оплаты",
+  order_paid: "Заказ оплачен",
+  picking_started: "Сборка начата",
+  order_ready: "Заказ готов",
+  order_shipped: "Заказ отгружен",
+  low_stock: "Низкий остаток",
+  customer_registered: "Новый клиент",
+};
+
+/** Row from public.staff_list_notifications. */
+export type StaffNotification = {
+  id: string;
+  notification_type: StaffNotificationType;
+  title: string;
+  message: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  action_url: string | null;
+  metadata: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+};
+
 /** Row from public.staff_get_order_payment_summary / batch list. */
 export type StaffOrderPaymentSummary = {
   order_id: string;
