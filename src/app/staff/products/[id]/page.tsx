@@ -24,8 +24,11 @@ import {
   adjustStaffProductInventory,
   getStaffProductInventory,
   listStaffProductInventoryAdjustments,
+  listStaffProductStockReceipts,
+  recordStaffStockReceipt,
   type StaffInventoryAdjustment,
   type StaffProductInventory,
+  type StaffStockReceipt,
 } from "@/lib/staff/productInventory";
 import {
   deleteProductGroupPrice,
@@ -39,6 +42,7 @@ import {
   STAFF_PRODUCT_STATUS_LABELS,
   canManageProducts,
   canReadProducts,
+  canRecordStockReceipt,
   type StaffProductStatus,
 } from "@/types/database";
 import { StaffProductAnalytics } from "@/components/staff/StaffProductAnalytics";
@@ -67,6 +71,7 @@ export default function StaffProductDetailPage() {
   const { profile, profileLoading } = useProfile();
   const canRead = canReadProducts(profile?.role);
   const canManage = canManageProducts(profile?.role);
+  const canReceipt = canRecordStockReceipt(profile?.role);
   const canEditPricing = profile?.role === "admin";
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +108,7 @@ export default function StaffProductDetailPage() {
 
   const [inventory, setInventory] = useState<StaffProductInventory | null>(null);
   const [adjustments, setAdjustments] = useState<StaffInventoryAdjustment[]>([]);
+  const [receipts, setReceipts] = useState<StaffStockReceipt[]>([]);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [newQuantity, setNewQuantity] = useState("");
@@ -110,6 +116,13 @@ export default function StaffProductDetailPage() {
   const [adjustBusy, setAdjustBusy] = useState(false);
   const [adjustError, setAdjustError] = useState<string | null>(null);
   const [adjustInfo, setAdjustInfo] = useState<string | null>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptQty, setReceiptQty] = useState("");
+  const [receiptDoc, setReceiptDoc] = useState("");
+  const [receiptReason, setReceiptReason] = useState("");
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [receiptInfo, setReceiptInfo] = useState<string | null>(null);
 
   const [groupPrices, setGroupPrices] = useState<ProductGroupPriceRow[]>([]);
   const [groupPriceDrafts, setGroupPriceDrafts] = useState<Record<string, string>>({});
@@ -151,13 +164,15 @@ export default function StaffProductDetailPage() {
       listStaffCategories(true),
       getStaffProductInventory(productId),
       listStaffProductInventoryAdjustments(productId, 20),
+      listStaffProductStockReceipts(productId, 20).catch(() => [] as StaffStockReceipt[]),
     ])
-      .then(([row, cats, inv, history]) => {
+      .then(([row, cats, inv, history, receiptHistory]) => {
         if (ignore) return;
         applyProduct(row);
         setCategories(cats);
         setInventory(inv);
         setAdjustments(history);
+        setReceipts(receiptHistory);
         setInventoryError(null);
         setLoadError(null);
         setLoadedKey(productId);
@@ -411,12 +426,14 @@ export default function StaffProductDetailPage() {
 
   async function refreshInventory() {
     if (!productId) return;
-    const [inv, history] = await Promise.all([
+    const [inv, history, receiptHistory] = await Promise.all([
       getStaffProductInventory(productId),
       listStaffProductInventoryAdjustments(productId, 20),
+      listStaffProductStockReceipts(productId, 20).catch(() => [] as StaffStockReceipt[]),
     ]);
     setInventory(inv);
     setAdjustments(history);
+    setReceipts(receiptHistory);
     setInventoryError(null);
   }
 
@@ -471,6 +488,62 @@ export default function StaffProductDetailPage() {
       setAdjustError(error instanceof Error ? error.message : "Не удалось изменить остаток");
     } finally {
       setAdjustBusy(false);
+    }
+  }
+
+  async function handleStockReceipt(event: React.FormEvent) {
+    event.preventDefault();
+    if (!product || !canReceipt || receiptBusy) return;
+
+    const qty = Number(receiptQty.trim().replace(",", "."));
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setReceiptError("Количество поступления должно быть больше 0");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Оприходовать +${qty}?\n${receiptDoc.trim() ? `Документ: ${receiptDoc.trim()}\n` : ""}${
+        receiptReason.trim() ? `Причина: ${receiptReason.trim()}` : ""
+      }`.trim(),
+    );
+    if (!confirmed) return;
+
+    setReceiptBusy(true);
+    setReceiptError(null);
+    setReceiptInfo(null);
+    try {
+      const result = await recordStaffStockReceipt({
+        productId: product.id,
+        quantity: qty,
+        documentNumber: receiptDoc,
+        reason: receiptReason,
+      });
+      setInventory({
+        inventory_id: result.inventory_id,
+        product_id: result.product_id,
+        warehouse_id: result.warehouse_id,
+        warehouse_code: result.warehouse_code,
+        quantity: result.quantity,
+        reserved_quantity: result.reserved_quantity,
+        available_quantity: result.available_quantity,
+      });
+      setReceiptInfo(`Оприходовано +${result.received_quantity}.`);
+      setReceiptOpen(false);
+      setReceiptQty("");
+      setReceiptDoc("");
+      setReceiptReason("");
+      const [history, receiptHistory] = await Promise.all([
+        listStaffProductInventoryAdjustments(product.id, 20),
+        listStaffProductStockReceipts(product.id, 20),
+      ]);
+      setAdjustments(history);
+      setReceipts(receiptHistory);
+      const refreshed = await getStaffProduct(product.id);
+      applyProduct(refreshed);
+    } catch (error: unknown) {
+      setReceiptError(error instanceof Error ? error.message : "Не удалось оприходовать");
+    } finally {
+      setReceiptBusy(false);
     }
   }
 
@@ -973,21 +1046,41 @@ export default function StaffProductDetailPage() {
               Фактический остаток не может быть меньше количества в резерве.
             </p>
           </div>
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => {
-                setAdjustOpen((open) => !open);
-                setNewQuantity(inventory ? String(inventory.quantity) : "0");
-                setAdjustReason("");
-                setAdjustError(null);
-                setAdjustInfo(null);
-              }}
-              className={`rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
-            >
-              {adjustOpen ? "Скрыть форму" : "Изменить остаток"}
-            </button>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAdjustOpen((open) => !open);
+                  setReceiptOpen(false);
+                  setNewQuantity(inventory ? String(inventory.quantity) : "0");
+                  setAdjustReason("");
+                  setAdjustError(null);
+                  setAdjustInfo(null);
+                }}
+                className={`rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
+              >
+                {adjustOpen ? "Скрыть форму" : "Изменить остаток"}
+              </button>
+            )}
+            {canReceipt && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReceiptOpen((open) => !open);
+                  setAdjustOpen(false);
+                  setReceiptQty("");
+                  setReceiptDoc("");
+                  setReceiptReason("");
+                  setReceiptError(null);
+                  setReceiptInfo(null);
+                }}
+                className={`rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
+              >
+                {receiptOpen ? "Скрыть поступление" : "Оприходовать"}
+              </button>
+            )}
+          </div>
         </div>
 
         {inventoryError && (
@@ -1085,6 +1178,104 @@ export default function StaffProductDetailPage() {
             </button>
           </form>
         )}
+
+        {canReceipt && receiptOpen && (
+          <form
+            onSubmit={handleStockReceipt}
+            className="flex flex-col gap-3 rounded-md border border-neutral-100 bg-neutral-50 p-4"
+          >
+            <p className="text-sm text-neutral-600">
+              Поступление увеличивает фактический остаток. Это не корректировка
+              (correction) — для исправлений используйте «Изменить остаток».
+            </p>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Количество поступило *
+              </span>
+              <input
+                required
+                inputMode="decimal"
+                value={receiptQty}
+                onChange={(e) => setReceiptQty(e.target.value)}
+                className={inputClass}
+                placeholder="120"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Номер документа
+              </span>
+              <input
+                maxLength={100}
+                value={receiptDoc}
+                onChange={(e) => setReceiptDoc(e.target.value)}
+                className={inputClass}
+                placeholder="Необязательно"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Причина / комментарий
+              </span>
+              <input
+                maxLength={500}
+                value={receiptReason}
+                onChange={(e) => setReceiptReason(e.target.value)}
+                className={inputClass}
+                placeholder="Необязательно"
+              />
+            </label>
+            {receiptError && (
+              <p className="text-sm text-red-600" role="alert">
+                {receiptError}
+              </p>
+            )}
+            {receiptInfo && (
+              <p className="text-sm text-emerald-700">{receiptInfo}</p>
+            )}
+            <button
+              type="submit"
+              disabled={receiptBusy}
+              className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:opacity-60 ${focusRing}`}
+            >
+              {receiptBusy ? "Сохранение..." : "Оприходовать"}
+            </button>
+          </form>
+        )}
+
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            История поступлений
+          </h3>
+          {receipts.length === 0 ? (
+            <p className="mt-2 text-sm text-neutral-500">Пока нет поступлений</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-neutral-100">
+              {receipts.map((row) => (
+                <li key={row.id} className="py-2 text-sm">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-medium text-emerald-700">
+                      +{row.quantity}
+                      <span className="ml-2 font-normal text-neutral-500">
+                        ({row.previous_quantity} → {row.new_quantity})
+                      </span>
+                    </span>
+                    <span className="text-xs text-neutral-400">
+                      {new Date(row.created_at).toLocaleString("ru-RU")}
+                    </span>
+                  </div>
+                  {row.document_number ? (
+                    <p className="text-neutral-600">Документ: {row.document_number}</p>
+                  ) : null}
+                  {row.reason ? <p className="text-neutral-600">{row.reason}</p> : null}
+                  <p className="text-xs text-neutral-400">
+                    {row.created_by_name ?? "Сотрудник"}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">

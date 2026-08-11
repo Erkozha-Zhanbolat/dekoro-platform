@@ -279,6 +279,11 @@ export function canReadProducts(role: UserRole | null | undefined): boolean {
   return role === "admin" || role === "manager" || role === "warehouse";
 }
 
+/** Explicit stock receipt (оприходование) — warehouse + admin; not manager. */
+export function canRecordStockReceipt(role: UserRole | null | undefined): boolean {
+  return role === "admin" || role === "warehouse";
+}
+
 /**
  * Row from public.staff_get_product_inventory / staff_adjust_product_inventory.
  * Quantities are numeric(14,3) in DB — keep as JS number (no integer truncation).
@@ -310,6 +315,28 @@ export type StaffInventoryAdjustment = {
   created_by: string;
   created_by_name: string | null;
   created_at: string;
+};
+
+/** Row from public.staff_record_stock_receipt / staff_list_product_stock_receipts. */
+export type StaffStockReceipt = {
+  id: string;
+  product_id: string;
+  warehouse_id: string;
+  quantity: number;
+  previous_quantity: number;
+  new_quantity: number;
+  document_number: string | null;
+  reason: string | null;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+};
+
+export type StaffStockReceiptResult = StaffProductInventory & {
+  receipt_id: string;
+  received_quantity: number;
+  previous_quantity: number;
+  new_quantity: number;
 };
 
 export const INVENTORY_ADJUSTMENT_REASON_PRESETS = [
@@ -1220,7 +1247,7 @@ export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string>
   payment_shortfall_after_reversal: "Недофинансирование после сторно",
 };
 
-/** Staff in-app notification types (029_staff_notifications.sql). */
+/** Staff in-app notification types (029 + 030_workflow_notifications.sql). */
 export type StaffNotificationType =
   | "new_order"
   | "payment_received"
@@ -1230,7 +1257,8 @@ export type StaffNotificationType =
   | "order_ready"
   | "order_shipped"
   | "low_stock"
-  | "customer_registered";
+  | "customer_registered"
+  | "stock_received";
 
 export const STAFF_NOTIFICATION_TYPE_LABELS: Record<StaffNotificationType, string> = {
   new_order: "Новый заказ",
@@ -1242,12 +1270,43 @@ export const STAFF_NOTIFICATION_TYPE_LABELS: Record<StaffNotificationType, strin
   order_shipped: "Заказ отгружен",
   low_stock: "Низкий остаток",
   customer_registered: "Новый клиент",
+  stock_received: "Поступление товара",
 };
 
 /** Row from public.staff_list_notifications. */
 export type StaffNotification = {
   id: string;
   notification_type: StaffNotificationType;
+  title: string;
+  message: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  action_url: string | null;
+  metadata: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+};
+
+/** Client in-app notification types (030_workflow_notifications.sql). */
+export type ClientNotificationType =
+  | "payment_confirmed"
+  | "order_picking"
+  | "order_ready"
+  | "order_shipped"
+  | "order_completed";
+
+export const CLIENT_NOTIFICATION_TYPE_LABELS: Record<ClientNotificationType, string> = {
+  payment_confirmed: "Оплата подтверждена",
+  order_picking: "Сборка",
+  order_ready: "Готов к отгрузке",
+  order_shipped: "Отгружен",
+  order_completed: "Завершён",
+};
+
+/** Row from public.client_list_notifications. */
+export type ClientNotification = {
+  id: string;
+  notification_type: ClientNotificationType;
   title: string;
   message: string | null;
   entity_type: string | null;

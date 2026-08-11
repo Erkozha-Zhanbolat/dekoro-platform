@@ -10,6 +10,7 @@ import { useProfile } from "@/context/ProfileContext";
 import { useFavorites } from "@/context/FavoritesContext";
 import { canAccessStaff } from "@/types/database";
 import { enableQuickOrder, useSupabaseCatalog, useSupabaseFavorites } from "@/lib/featureFlags";
+import ClientNotificationBell from "@/components/ClientNotificationBell";
 
 // Shared by both the desktop nav and the mobile menu below, so the Quick
 // Order link only needs to be added/removed here, once, to affect both.
@@ -214,75 +215,81 @@ export default function Header() {
             <SearchField id="header-search-desktop" />
           </form>
 
-          <nav className="ml-auto hidden items-center gap-6 md:flex">
-            {showStaffLink && (
+          <div className="ml-auto flex items-center gap-2 md:gap-6">
+            {user ? (
+              <ClientNotificationBell key={user.id} profileId={user.id} />
+            ) : null}
+
+            <nav className="hidden items-center gap-6 md:flex">
+              {showStaffLink && (
+                <Link
+                  href="/staff"
+                  className={`text-sm font-medium text-[#0F766E] transition-colors hover:text-[#0c5f58] rounded-sm ${focusRing}`}
+                >
+                  Панель сотрудников
+                </Link>
+              )}
               <Link
-                href="/staff"
-                className={`text-sm font-medium text-[#0F766E] transition-colors hover:text-[#0c5f58] rounded-sm ${focusRing}`}
+                href="/orders"
+                className={`text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
               >
-                Панель сотрудников
+                Мои заказы
               </Link>
-            )}
-            <Link
-              href="/orders"
-              className={`text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
-            >
-              Мои заказы
-            </Link>
-            {useSupabaseFavorites && (
+              {useSupabaseFavorites && (
+                <Link
+                  href="/favorites"
+                  className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
+                >
+                  <HeartIcon className="h-5 w-5" />
+                  {favoritesLabel}
+                </Link>
+              )}
               <Link
-                href="/favorites"
+                href="/cart"
                 className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
               >
-                <HeartIcon className="h-5 w-5" />
-                {favoritesLabel}
+                <span className="relative">
+                  <CartIcon className="h-5 w-5" />
+                  <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0F766E] px-1 text-[10px] font-semibold leading-none text-white">
+                    {totalQuantity}
+                  </span>
+                </span>
+                Корзина
               </Link>
-            )}
-            <Link
-              href="/cart"
-              className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
-            >
-              <span className="relative">
+              <Link
+                href={profileHref}
+                className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
+              >
+                <ProfileIcon className="h-5 w-5" />
+                Профиль
+              </Link>
+            </nav>
+
+            <div className="flex items-center gap-1 md:hidden">
+              <Link
+                href="/cart"
+                aria-label="Корзина"
+                className={`relative flex h-9 w-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
+              >
                 <CartIcon className="h-5 w-5" />
-                <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0F766E] px-1 text-[10px] font-semibold leading-none text-white">
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0F766E] px-1 text-[10px] font-semibold leading-none text-white">
                   {totalQuantity}
                 </span>
-              </span>
-              Корзина
-            </Link>
-            <Link
-              href={profileHref}
-              className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
-            >
-              <ProfileIcon className="h-5 w-5" />
-              Профиль
-            </Link>
-          </nav>
-
-          <div className="ml-auto flex items-center gap-1 md:hidden">
-            <Link
-              href="/cart"
-              aria-label="Корзина"
-              className={`relative flex h-9 w-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
-            >
-              <CartIcon className="h-5 w-5" />
-              <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0F766E] px-1 text-[10px] font-semibold leading-none text-white">
-                {totalQuantity}
-              </span>
-            </Link>
-            <button
-              type="button"
-              aria-label={isMenuOpen ? "Закрыть меню" : "Открыть меню"}
-              aria-expanded={isMenuOpen}
-              onClick={() => setIsMenuOpen((open) => !open)}
-              className={`flex h-9 w-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
-            >
-              {isMenuOpen ? (
-                <CloseIcon className="h-5 w-5" />
-              ) : (
-                <MenuIcon className="h-5 w-5" />
-              )}
-            </button>
+              </Link>
+              <button
+                type="button"
+                aria-label={isMenuOpen ? "Закрыть меню" : "Открыть меню"}
+                aria-expanded={isMenuOpen}
+                onClick={() => setIsMenuOpen((open) => !open)}
+                className={`flex h-9 w-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
+              >
+                {isMenuOpen ? (
+                  <CloseIcon className="h-5 w-5" />
+                ) : (
+                  <MenuIcon className="h-5 w-5" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -316,6 +323,15 @@ export default function Header() {
                 Панель сотрудников
               </Link>
             )}
+            {user ? (
+              <Link
+                href="/notifications"
+                onClick={() => setIsMenuOpen(false)}
+                className={`rounded-md px-2 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 hover:text-[#0F766E] ${focusRing}`}
+              >
+                Уведомления
+              </Link>
+            ) : null}
             <Link
               href="/orders"
               onClick={() => setIsMenuOpen(false)}

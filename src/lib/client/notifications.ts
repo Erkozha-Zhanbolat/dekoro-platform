@@ -1,19 +1,19 @@
 import { supabase } from "@/lib/supabase/client";
-import type { StaffNotification, StaffNotificationType } from "@/types/database";
+import type { ClientNotification, ClientNotificationType } from "@/types/database";
 
 /**
- * Staff in-app notifications (029_staff_notifications.sql + 030 workflow types).
+ * Client in-app notifications (supabase/migrations/030_workflow_notifications.sql).
  * All access goes through SECURITY DEFINER RPCs — recipient is always auth.uid().
  */
 
-export type { StaffNotification, StaffNotificationType };
+export type { ClientNotification, ClientNotificationType };
 
 const HEADER_LIMIT = 20;
 
-function mapNotification(row: Record<string, unknown>): StaffNotification {
+function mapNotification(row: Record<string, unknown>): ClientNotification {
   return {
     id: String(row.id),
-    notification_type: String(row.notification_type) as StaffNotificationType,
+    notification_type: String(row.notification_type) as ClientNotificationType,
     title: String(row.title),
     message: row.message == null ? null : String(row.message),
     entity_type: row.entity_type == null ? null : String(row.entity_type),
@@ -28,19 +28,18 @@ function mapNotification(row: Record<string, unknown>): StaffNotification {
   };
 }
 
-/** Header dropdown: latest notifications for the current staff user. */
-export async function listStaffNotificationsHeader(
+export async function listClientNotificationsHeader(
   limit = HEADER_LIMIT,
-): Promise<StaffNotification[]> {
-  return listStaffNotifications({ limit, unreadOnly: false, offset: 0 });
+): Promise<ClientNotification[]> {
+  return listClientNotifications({ limit, unreadOnly: false, offset: 0 });
 }
 
-export async function listStaffNotifications(options?: {
+export async function listClientNotifications(options?: {
   limit?: number;
   unreadOnly?: boolean;
   offset?: number;
-}): Promise<StaffNotification[]> {
-  const { data, error } = await supabase.rpc("staff_list_notifications", {
+}): Promise<ClientNotification[]> {
+  const { data, error } = await supabase.rpc("client_list_notifications", {
     p_limit: options?.limit ?? 30,
     p_unread_only: options?.unreadOnly ?? false,
     p_offset: options?.offset ?? 0,
@@ -51,8 +50,8 @@ export async function listStaffNotifications(options?: {
   return ((data as Record<string, unknown>[] | null) ?? []).map(mapNotification);
 }
 
-export async function getUnreadNotificationCount(): Promise<number> {
-  const { data, error } = await supabase.rpc("staff_get_unread_notification_count");
+export async function getClientUnreadNotificationCount(): Promise<number> {
+  const { data, error } = await supabase.rpc("client_get_unread_notification_count");
   if (error) {
     throw new Error(error.message || "Не удалось получить число непрочитанных");
   }
@@ -60,8 +59,8 @@ export async function getUnreadNotificationCount(): Promise<number> {
   return Number.isFinite(n) ? n : 0;
 }
 
-export async function markNotificationRead(notificationId: string): Promise<boolean> {
-  const { data, error } = await supabase.rpc("staff_mark_notification_read", {
+export async function markClientNotificationRead(notificationId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("client_mark_notification_read", {
     p_notification_id: notificationId,
   });
   if (error) {
@@ -70,8 +69,8 @@ export async function markNotificationRead(notificationId: string): Promise<bool
   return Boolean(data);
 }
 
-export async function markAllNotificationsRead(): Promise<number> {
-  const { data, error } = await supabase.rpc("staff_mark_all_notifications_read");
+export async function markAllClientNotificationsRead(): Promise<number> {
+  const { data, error } = await supabase.rpc("client_mark_all_notifications_read");
   if (error) {
     throw new Error(error.message || "Не удалось отметить все уведомления");
   }
@@ -79,8 +78,7 @@ export async function markAllNotificationsRead(): Promise<number> {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Relative time for notification lists (ru). */
-export function formatNotificationRelativeTime(
+export function formatClientNotificationRelativeTime(
   iso: string,
   nowMs: number = Date.now(),
 ): string {
@@ -121,7 +119,7 @@ function pluralRu(n: number, one: string, few: string, many: string): string {
   return many;
 }
 
-export function formatUnreadBadge(count: number): string {
+export function formatClientUnreadBadge(count: number): string {
   if (count <= 0) return "";
   if (count > 99) return "99+";
   return String(count);

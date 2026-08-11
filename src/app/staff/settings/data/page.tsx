@@ -334,6 +334,8 @@ export default function StaffDataCenterPage() {
                   ["Архивы", usage.counts.data_archives],
                   ["Test orders", usage.counts.test_orders],
                   ["Уведомления", usage.counts.staff_notifications],
+                  ["Клиент. уведомления", usage.counts.client_notifications],
+                  ["Поступления", usage.counts.stock_receipts],
                 ] as const
               ).map(([label, value]) => (
                 <div
