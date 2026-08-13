@@ -94,6 +94,10 @@ export interface Customer {
   email: string | null;
   iin_bin: string | null;
   contact_person: string | null;
+  /**
+   * For company customers this is the legal address (юридический адрес).
+   * Stage 23 invoice validation reads this column — there is no separate legal_address field.
+   */
   address: string | null;
   city: string | null;
   source: CustomerSource | null;

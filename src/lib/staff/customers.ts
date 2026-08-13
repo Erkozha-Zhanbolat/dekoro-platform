@@ -1,4 +1,8 @@
 import { supabase } from "@/lib/supabase/client";
+import {
+  normalizeCustomerEmail,
+  normalizeCustomerPhone,
+} from "@/lib/staff/customerDetails";
 import type {
   Customer,
   CustomerSource,
@@ -44,7 +48,10 @@ export type StaffCreateCustomerInput = {
 
 export type StaffUpdateCustomerInput = {
   display_name: string;
-  /** Pass '' to clear; omit/undefined keeps existing (RPC NULL = keep). */
+  /**
+   * Omit/undefined/null keeps the existing DB value (RPC NULL = keep).
+   * Pass '' to clear. Company legal address is `address` (Stage 23 invoice).
+   */
   legal_name?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -156,16 +163,16 @@ export async function getStaffCustomer(customerId: string): Promise<StaffCustome
 export async function createStaffCustomer(input: StaffCreateCustomerInput): Promise<Customer> {
   const { data, error } = await supabase.rpc("staff_create_customer", {
     p_customer_type: input.customer_type,
-    p_display_name: input.display_name,
-    p_legal_name: input.legal_name ?? null,
-    p_phone: input.phone ?? null,
-    p_email: input.email ?? null,
-    p_iin_bin: input.iin_bin ?? null,
-    p_contact_person: input.contact_person ?? null,
-    p_address: input.address ?? null,
-    p_city: input.city ?? null,
+    p_display_name: input.display_name.trim(),
+    p_legal_name: input.legal_name?.trim() || null,
+    p_phone: input.phone ? normalizeCustomerPhone(input.phone) : null,
+    p_email: input.email ? normalizeCustomerEmail(input.email) : null,
+    p_iin_bin: input.iin_bin?.trim() || null,
+    p_contact_person: input.contact_person?.trim() || null,
+    p_address: input.address?.trim() || null,
+    p_city: input.city?.trim() || null,
     p_source: input.source ?? "staff",
-    p_notes: input.notes ?? null,
+    p_notes: input.notes?.trim() || null,
   });
 
   if (error) {
@@ -179,20 +186,53 @@ export async function updateStaffCustomer(
   customerId: string,
   input: StaffUpdateCustomerInput,
 ): Promise<Customer> {
-  // RPC semantics (013): NULL = keep field; '' = clear to null; value = set.
-  // Full-form UI always sends every field as string (possibly '').
-  const { data, error } = await supabase.rpc("staff_update_customer", {
+  // RPC semantics (013/034): NULL/omit = keep; '' = clear; value = set.
+  // Individual edits omit company-only keys so they are not wiped.
+  const payload: Record<string, string | null> = {
     p_customer_id: customerId,
-    p_display_name: input.display_name,
-    p_legal_name: input.legal_name ?? "",
-    p_phone: input.phone ?? "",
-    p_email: input.email ?? "",
-    p_iin_bin: input.iin_bin ?? "",
-    p_contact_person: input.contact_person ?? "",
-    p_address: input.address ?? "",
-    p_city: input.city ?? "",
-    p_source: input.source ?? "",
-    p_notes: input.notes ?? "",
+    p_display_name: input.display_name.trim(),
+  };
+
+  if (input.legal_name !== undefined) {
+    payload.p_legal_name = input.legal_name?.trim() ?? "";
+  }
+  if (input.phone !== undefined) {
+    payload.p_phone = input.phone ? normalizeCustomerPhone(input.phone) : "";
+  }
+  if (input.email !== undefined) {
+    payload.p_email = input.email ? normalizeCustomerEmail(input.email) : "";
+  }
+  if (input.iin_bin !== undefined) {
+    payload.p_iin_bin = input.iin_bin?.trim() ?? "";
+  }
+  if (input.contact_person !== undefined) {
+    payload.p_contact_person = input.contact_person?.trim() ?? "";
+  }
+  if (input.address !== undefined) {
+    payload.p_address = input.address?.trim() ?? "";
+  }
+  if (input.city !== undefined) {
+    payload.p_city = input.city?.trim() ?? "";
+  }
+  if (input.source !== undefined) {
+    payload.p_source = input.source ?? "";
+  }
+  if (input.notes !== undefined) {
+    payload.p_notes = input.notes?.trim() ?? "";
+  }
+
+  const { data, error } = await supabase.rpc("staff_update_customer", payload as {
+    p_customer_id: string;
+    p_display_name: string;
+    p_legal_name?: string;
+    p_phone?: string;
+    p_email?: string;
+    p_iin_bin?: string;
+    p_contact_person?: string;
+    p_address?: string;
+    p_city?: string;
+    p_source?: string;
+    p_notes?: string;
   });
 
   if (error) {

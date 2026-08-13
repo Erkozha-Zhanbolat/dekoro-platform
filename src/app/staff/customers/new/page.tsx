@@ -4,13 +4,15 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { useProfile } from "@/context/ProfileContext";
-import { createStaffCustomer } from "@/lib/staff/customers";
-import type { CustomerSource, CustomerType } from "@/types/database";
+import { StaffCustomerDetailsFields } from "@/components/staff/StaffCustomerDetailsFields";
 import {
-  CUSTOMER_SOURCE_LABELS,
-  CUSTOMER_SOURCES,
-  CUSTOMER_TYPE_LABELS,
-} from "@/types/database";
+  emptyCustomerDetailsForm,
+  validateCustomerDetailsForm,
+  type CustomerDetailsFormValues,
+} from "@/lib/staff/customerDetails";
+import { createStaffCustomer } from "@/lib/staff/customers";
+import type { CustomerType } from "@/types/database";
+import { CUSTOMER_TYPE_LABELS } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -25,18 +27,13 @@ function StaffNewCustomerForm() {
   const canManage = profile?.role === "manager" || profile?.role === "admin";
 
   const [customerType, setCustomerType] = useState<CustomerType>("individual");
-  const [displayName, setDisplayName] = useState("");
-  const [legalName, setLegalName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [iinBin, setIinBin] = useState("");
-  const [contactPerson, setContactPerson] = useState("");
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
-  const [source, setSource] = useState<CustomerSource>("staff");
-  const [notes, setNotes] = useState("");
+  const [values, setValues] = useState<CustomerDetailsFormValues>(emptyCustomerDetailsForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function patch(next: Partial<CustomerDetailsFormValues>) {
+    setValues((prev) => ({ ...prev, ...next }));
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -44,22 +41,29 @@ function StaffNewCustomerForm() {
       return;
     }
 
+    const validationError = validateCustomerDetailsForm(customerType, values);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
     try {
+      const isCompany = customerType === "company";
       const customer = await createStaffCustomer({
         customer_type: customerType,
-        display_name: displayName,
-        legal_name: legalName || null,
-        phone: phone || null,
-        email: email || null,
-        iin_bin: iinBin || null,
-        contact_person: contactPerson || null,
-        address: address || null,
-        city: city || null,
-        source,
-        notes: notes || null,
+        display_name: isCompany ? values.legal_name.trim() : values.display_name,
+        legal_name: isCompany ? values.legal_name : null,
+        phone: values.phone,
+        email: values.email,
+        iin_bin: isCompany ? values.iin_bin : null,
+        contact_person: isCompany ? values.contact_person : null,
+        address: isCompany ? values.address : null,
+        city: values.city || null,
+        source: values.source,
+        notes: values.notes || null,
       });
 
       if (returnToOrder) {
@@ -118,113 +122,12 @@ function StaffNewCustomerForm() {
           </select>
         </label>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Имя *</span>
-          <input
-            required
-            value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
-            className={inputClass}
-            placeholder="Иван Иванов / ТОО Ромашка"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-            Юридическое название
-          </span>
-          <input
-            value={legalName}
-            onChange={(event) => setLegalName(event.target.value)}
-            className={inputClass}
-          />
-        </label>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Телефон</span>
-            <input
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              className={inputClass}
-              placeholder="+7 ..."
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className={inputClass}
-            />
-          </label>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">ИИН / БИН</span>
-            <input
-              value={iinBin}
-              onChange={(event) => setIinBin(event.target.value)}
-              className={inputClass}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-              Контактное лицо
-            </span>
-            <input
-              value={contactPerson}
-              onChange={(event) => setContactPerson(event.target.value)}
-              className={inputClass}
-            />
-          </label>
-        </div>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Адрес</span>
-          <input
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            className={inputClass}
-          />
-        </label>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Город</span>
-            <input
-              value={city}
-              onChange={(event) => setCity(event.target.value)}
-              className={inputClass}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Источник</span>
-            <select
-              value={source}
-              onChange={(event) => setSource(event.target.value as CustomerSource)}
-              className={inputClass}
-            >
-              {CUSTOMER_SOURCES.map((value) => (
-                <option key={value} value={value}>
-                  {CUSTOMER_SOURCE_LABELS[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Заметка</span>
-          <textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            rows={3}
-            className={inputClass}
-          />
-        </label>
+        <StaffCustomerDetailsFields
+          customerType={customerType}
+          values={values}
+          onChange={patch}
+          disabled={saving}
+        />
 
         {error && (
           <p className="text-sm text-red-600" role="alert">
