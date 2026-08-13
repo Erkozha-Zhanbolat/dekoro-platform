@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { AnalyticsConsentSettings } from "@/components/AnalyticsConsentBanner";
+import { AnalyticsConsentFooterLink } from "@/components/AnalyticsConsentBanner";
 
 export default function Footer() {
   const pathname = usePathname();
@@ -21,7 +21,9 @@ export default function Footer() {
           <span>B2B-платформа для партнёров</span>
           <span>© {year}</span>
         </div>
-        <AnalyticsConsentSettings className="border-t border-neutral-100 pt-4" />
+        <div className="flex justify-center sm:justify-start">
+          <AnalyticsConsentFooterLink />
+        </div>
       </div>
     </footer>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useState, useSyncExternalStore } from "react";
 import {
   getAnalyticsConsent,
   subscribeAnalyticsConsent,
@@ -78,7 +78,82 @@ export function AnalyticsConsentBanner() {
   );
 }
 
-/** Compact controls for profile / footer «Настройки аналитики». */
+function consentLabel(consent: AnalyticsConsent): string {
+  if (consent === "granted") return "Разрешена";
+  if (consent === "denied") return "Отключена";
+  return "Не выбрано";
+}
+
+function AnalyticsConsentModal({ onClose }: { onClose: () => void }) {
+  const titleId = useId();
+  const consent = useAnalyticsConsentState();
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  function choose(value: "granted" | "denied") {
+    applyAnalyticsConsentDecision(value);
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4 py-8"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id={titleId} className="text-base font-semibold text-neutral-800">
+          Аналитика
+        </h2>
+        <p className="mt-2 text-sm text-neutral-500">
+          Текущий выбор:
+          <span className="ml-1 font-medium text-neutral-800">{consentLabel(consent)}</span>
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={() => choose("granted")} className={equalButton}>
+            Разрешить
+          </button>
+          <button type="button" onClick={() => choose("denied")} className={equalButton}>
+            Отказаться
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Footer-only: quiet link. Never renders the full consent block. */
+export function AnalyticsConsentFooterLink() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`text-sm text-neutral-500 transition-colors hover:text-[#0F766E] ${focusRing}`}
+      >
+        Настройки аналитики
+      </button>
+      {open ? <AnalyticsConsentModal onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+/** Dedicated profile section — not for the storefront footer. */
 export function AnalyticsConsentSettings({
   className,
 }: {
@@ -86,39 +161,24 @@ export function AnalyticsConsentSettings({
 }) {
   const consent = useAnalyticsConsentState();
 
-  const label =
-    consent === "granted"
-      ? "Разрешена"
-      : consent === "denied"
-        ? "Отключена"
-        : "Не выбрано";
-
   return (
     <div className={className}>
       <p className="text-sm font-medium text-neutral-800">Настройки аналитики</p>
       <p className="mt-1 text-sm text-neutral-500">
-        Сейчас: {label}. Помогает улучшать каталог DEKORO.
+        Текущий выбор: {consentLabel(consent)}. Помогает улучшать каталог DEKORO.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => applyAnalyticsConsentDecision("granted")}
-          className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${focusRing} ${
-            consent === "granted"
-              ? "bg-[#0F766E] text-white"
-              : "border border-neutral-200 text-neutral-700 hover:border-[#0F766E]"
-          }`}
+          className={equalButton}
         >
-          Разрешить аналитику
+          Разрешить
         </button>
         <button
           type="button"
           onClick={() => applyAnalyticsConsentDecision("denied")}
-          className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${focusRing} ${
-            consent === "denied"
-              ? "bg-neutral-800 text-white"
-              : "border border-neutral-200 text-neutral-700 hover:border-neutral-400"
-          }`}
+          className={equalButton}
         >
           Отказаться
         </button>
