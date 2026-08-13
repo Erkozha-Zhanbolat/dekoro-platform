@@ -1,11 +1,14 @@
 import { supabase } from "@/lib/supabase/client";
 import type {
   DocumentTaxMode,
+  OrderPaymentClaimStatus,
   OrderPaymentMethod,
   OrderPaymentRecordStatus,
   OrderPaymentStatus,
   OrderStatus,
+  StaffConfirmPaymentMethod,
   StaffCustomerReceivables,
+  StaffOrderPaymentClaim,
   StaffOrderPaymentItem,
   StaffOrderPaymentListSummary,
   StaffOrderPaymentSummary,
@@ -235,6 +238,63 @@ export async function recordStaffOrderPayment(
   return mapPayment(data as PaymentRow);
 }
 
+export type ConfirmStaffOrderPaymentInput = {
+  orderId: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: StaffConfirmPaymentMethod;
+  referenceNumber?: string | null;
+  comment?: string | null;
+};
+
+export type ConfirmStaffOrderPaymentResult = {
+  payment_id: string;
+  amount: number;
+  amount_remaining: number;
+  payment_status: OrderPaymentStatus;
+  order_status: OrderStatus;
+  transitioned_to_paid: boolean;
+};
+
+export async function confirmStaffOrderPayment(
+  input: ConfirmStaffOrderPaymentInput,
+): Promise<ConfirmStaffOrderPaymentResult> {
+  const { data, error } = await supabase.rpc("staff_confirm_order_payment", {
+    p_order_id: input.orderId,
+    p_amount: input.amount,
+    p_payment_date: input.paymentDate,
+    p_payment_method: input.paymentMethod,
+    p_reference_number: input.referenceNumber ?? null,
+    p_comment: input.comment ?? null,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось подтвердить оплату");
+  }
+
+  const [row] = (data as Array<{
+    payment_id: string;
+    amount: number | string;
+    amount_remaining: number | string;
+    payment_status: string;
+    order_status: string;
+    transitioned_to_paid: boolean;
+  }> | null) ?? [];
+
+  if (!row) {
+    throw new Error("Не удалось подтвердить оплату");
+  }
+
+  return {
+    payment_id: row.payment_id,
+    amount: num(row.amount),
+    amount_remaining: num(row.amount_remaining),
+    payment_status: row.payment_status as OrderPaymentStatus,
+    order_status: row.order_status as OrderStatus,
+    transitioned_to_paid: Boolean(row.transitioned_to_paid),
+  };
+}
+
 export async function reverseStaffOrderPayment(
   paymentId: string,
   reason: string,
@@ -275,5 +335,62 @@ export async function getStaffCustomerReceivables(
     orders_with_balance_count: Number(row.orders_with_balance_count),
     overdue_outstanding_total: num(row.overdue_outstanding_total),
     overdue_orders_count: Number(row.overdue_orders_count),
+  };
+}
+
+type ClaimRow = {
+  claim_id: string | null;
+  status: string | null;
+  created_at: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolved_by_name: string | null;
+  confirmed_payment_id: string | null;
+  kaspi_qr_path: string | null;
+};
+
+const KASPI_QR_PATH_RE = /^organization\/kaspi_qr\.(png|jpe?g|webp)$/i;
+
+export async function getStaffOrderPaymentClaim(
+  orderId: string,
+): Promise<StaffOrderPaymentClaim> {
+  const { data, error } = await supabase.rpc("staff_get_order_payment_claim", {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить сообщение об оплате");
+  }
+
+  const [row] = (data as ClaimRow[] | null) ?? [];
+  if (!row) {
+    return {
+      claim_id: null,
+      status: null,
+      created_at: null,
+      resolved_at: null,
+      resolved_by: null,
+      resolved_by_name: null,
+      confirmed_payment_id: null,
+      kaspi_qr_path: null,
+    };
+  }
+
+  const claimStatus = row.status;
+  const claimOk = claimStatus === "reported" || claimStatus === "confirmed";
+  const qr =
+    typeof row.kaspi_qr_path === "string" && KASPI_QR_PATH_RE.test(row.kaspi_qr_path.trim())
+      ? row.kaspi_qr_path.trim()
+      : null;
+
+  return {
+    claim_id: row.claim_id,
+    status: claimOk ? (claimStatus as OrderPaymentClaimStatus) : null,
+    created_at: row.created_at,
+    resolved_at: row.resolved_at,
+    resolved_by: row.resolved_by,
+    resolved_by_name: row.resolved_by_name,
+    confirmed_payment_id: row.confirmed_payment_id,
+    kaspi_qr_path: qr,
   };
 }

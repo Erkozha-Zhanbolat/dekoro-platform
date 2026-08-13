@@ -327,6 +327,7 @@ export default function StaffDataCenterPage() {
                   ["Заказы", usage.counts.orders],
                   ["Позиции", usage.counts.order_items],
                   ["Оплаты", usage.counts.payments],
+                  ["Сообщения об оплате", usage.counts.payment_claims],
                   ["Документы", usage.counts.documents],
                   ["Sessions", usage.counts.analytics_sessions],
                   ["Events", usage.counts.analytics_events],

@@ -15,6 +15,7 @@ export const ORGANIZATION_ASSET_LIMITS: Record<
   logo: { maxBytes: 2 * 1024 * 1024, label: "Логотип" },
   stamp: { maxBytes: 3 * 1024 * 1024, label: "Печать" },
   signature: { maxBytes: 2 * 1024 * 1024, label: "Подпись" },
+  kaspi_qr: { maxBytes: 2 * 1024 * 1024, label: "Kaspi QR для оплаты" },
 };
 
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -25,7 +26,8 @@ const EXT_BY_MIME: Record<string, "png" | "jpg" | "webp"> = {
   "image/webp": "webp",
 };
 
-const LIVE_PATH_RE = /^organization\/(logo|stamp|signature)\.(png|jpe?g|webp)$/i;
+const LIVE_PATH_RE =
+  /^organization\/(logo|stamp|signature|kaspi_qr)\.(png|jpe?g|webp)$/i;
 const SNAPSHOT_PATH_RE =
   /^organization\/doc-snapshots\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(logo|stamp|signature)\.(png|jpe?g|webp)$/i;
 
@@ -74,12 +76,15 @@ export function getAssetPathFromSettings(
 ): string | null {
   if (kind === "logo") return settings.logo_path;
   if (kind === "stamp") return settings.stamp_path;
+  if (kind === "kaspi_qr") return settings.kaspi_qr_path;
   return settings.signature_path;
 }
 
 function assertLiveOrganizationPath(path: string): void {
   if (!LIVE_PATH_RE.test(path)) {
-    throw new Error("Разрешены только live path: organization/{logo|stamp|signature}.{ext}");
+    throw new Error(
+      "Разрешены только live path: organization/{logo|stamp|signature|kaspi_qr}.{ext}",
+    );
   }
 }
 

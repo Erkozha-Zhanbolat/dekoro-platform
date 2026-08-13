@@ -41,7 +41,7 @@ function collectReferencedPaths(refs: Record<string, unknown>): {
   }
 
   const org = (refs.organization_assets ?? {}) as Record<string, unknown>;
-  for (const key of ["logo_path", "stamp_path", "signature_path"] as const) {
+  for (const key of ["logo_path", "stamp_path", "signature_path", "kaspi_qr_path"] as const) {
     const path = typeof org[key] === "string" ? String(org[key]).trim() : "";
     if (path) organization.add(path);
   }

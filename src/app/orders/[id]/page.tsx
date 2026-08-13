@@ -350,7 +350,10 @@ export default function OrderDetailPage() {
           loadError={timelineError}
         />
 
-        <ClientOrderPaymentSummaryBlock orderId={order.id} />
+        <ClientOrderPaymentSummaryBlock
+          orderId={order.id}
+          orderStatus={order.status}
+        />
 
         <section>
           <h2 className="text-lg font-semibold text-neutral-800">

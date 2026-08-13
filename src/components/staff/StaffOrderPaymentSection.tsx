@@ -3,14 +3,18 @@
 import { useEffect, useState } from "react";
 import { formatPrice } from "@/lib/formatPrice";
 import {
+  confirmStaffOrderPayment,
+  getStaffOrderPaymentClaim,
   getStaffOrderPaymentSummary,
   listStaffOrderPayments,
   recordStaffOrderPayment,
   reverseStaffOrderPayment,
 } from "@/lib/staff/payments";
+import { getOrganizationAssetSignedUrl } from "@/lib/staff/organizationAssets";
 import { changeStaffOrderStatus } from "@/lib/staff/orders";
 import type {
-  OrderPaymentMethod,
+  StaffConfirmPaymentMethod,
+  StaffOrderPaymentClaim,
   StaffOrderPaymentItem,
   StaffOrderPaymentSummary,
   UserRole,
@@ -20,6 +24,7 @@ import {
   ORDER_PAYMENT_METHODS,
   ORDER_PAYMENT_RECORD_STATUS_LABELS,
   ORDER_PAYMENT_STATUS_LABELS,
+  STAFF_CONFIRM_PAYMENT_METHODS,
   canReverseOrderPayments,
 } from "@/types/database";
 
@@ -53,6 +58,9 @@ export default function StaffOrderPaymentSection({
 
   const [summary, setSummary] = useState<StaffOrderPaymentSummary | null>(null);
   const [payments, setPayments] = useState<StaffOrderPaymentItem[]>([]);
+  const [claim, setClaim] = useState<StaffOrderPaymentClaim | null>(null);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [qrLoadedFor, setQrLoadedFor] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | undefined>(undefined);
   const [reloadToken, setReloadToken] = useState(0);
@@ -60,7 +68,7 @@ export default function StaffOrderPaymentSection({
   const [modalOpen, setModalOpen] = useState(false);
   const [amountDraft, setAmountDraft] = useState("");
   const [dateDraft, setDateDraft] = useState(todayIsoDate());
-  const [methodDraft, setMethodDraft] = useState<OrderPaymentMethod>("bank_transfer");
+  const [methodDraft, setMethodDraft] = useState<StaffConfirmPaymentMethod>("bank_transfer");
   const [referenceDraft, setReferenceDraft] = useState("");
   const [commentDraft, setCommentDraft] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
@@ -87,13 +95,15 @@ export default function StaffOrderPaymentSection({
     Promise.all([
       getStaffOrderPaymentSummary(orderId),
       listStaffOrderPayments(orderId),
+      getStaffOrderPaymentClaim(orderId),
     ])
-      .then(([s, list]) => {
+      .then(([s, list, claimRow]) => {
         if (ignore) {
           return;
         }
         setSummary(s);
         setPayments(list);
+        setClaim(claimRow);
         setLoadError(null);
         setLoadedKey(currentKey);
       })
@@ -111,6 +121,29 @@ export default function StaffOrderPaymentSection({
       ignore = true;
     };
   }, [orderId, currentKey, loadedKey]);
+
+  const kaspiPath = claim?.kaspi_qr_path ?? null;
+
+  useEffect(() => {
+    if (!kaspiPath) {
+      return;
+    }
+    let ignore = false;
+    getOrganizationAssetSignedUrl(kaspiPath)
+      .then((url) => {
+        if (ignore) return;
+        setQrUrl(url);
+        setQrLoadedFor(kaspiPath);
+      })
+      .catch(() => {
+        if (ignore) return;
+        setQrUrl(null);
+        setQrLoadedFor(kaspiPath);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [kaspiPath]);
 
   function requestReload() {
     setReloadToken((token) => token + 1);
@@ -144,16 +177,33 @@ export default function StaffOrderPaymentSection({
     setSaveBusy(true);
     setSaveError(null);
     try {
-      await recordStaffOrderPayment({
-        orderId,
-        amount: parsedAmount,
-        paymentDate: dateDraft,
-        paymentMethod: methodDraft,
-        referenceNumber: referenceDraft,
-        comment: commentDraft,
-      });
-      setModalOpen(false);
-      requestReload();
+      if (canManageWorkflow) {
+        await confirmStaffOrderPayment({
+          orderId,
+          amount: parsedAmount,
+          paymentDate: dateDraft,
+          paymentMethod: methodDraft,
+          referenceNumber: referenceDraft,
+          comment: commentDraft,
+        });
+        setModalOpen(false);
+        await onOrderStatusChanged();
+        requestReload();
+      } else {
+        if (methodDraft === "kaspi") {
+          throw new Error("Kaspi доступен только при подтверждении менеджером");
+        }
+        await recordStaffOrderPayment({
+          orderId,
+          amount: parsedAmount,
+          paymentDate: dateDraft,
+          paymentMethod: methodDraft,
+          referenceNumber: referenceDraft,
+          comment: commentDraft,
+        });
+        setModalOpen(false);
+        requestReload();
+      }
     } catch (error) {
       setSaveError(
         error instanceof Error ? error.message : "Не удалось сохранить оплату",
@@ -248,10 +298,11 @@ export default function StaffOrderPaymentSection({
     summary.payment_status === "paid" &&
     summary.amount_due > 0;
 
-  const markPaidBlocked =
-    canManageWorkflow &&
-    orderStatus === "awaiting_payment" &&
-    summary.payment_status !== "paid";
+  const claimReported = claim?.status === "reported" && claim.created_at != null;
+
+  const confirmedPayment = claim?.confirmed_payment_id
+    ? payments.find((item) => item.id === claim.confirmed_payment_id)
+    : undefined;
 
   const sourceLabel = summary.obligation_frozen
     ? summary.obligation_source_type === "invoice" && summary.obligation_source_number
@@ -268,7 +319,18 @@ export default function StaffOrderPaymentSection({
           <h2 className="text-lg font-semibold text-neutral-800">Оплата</h2>
           <p className="mt-1 text-sm text-neutral-500">{sourceLabel}</p>
         </div>
-        {orderStatus !== "cancelled" && (
+        {orderStatus === "awaiting_payment" &&
+          summary.amount_remaining > 0 &&
+          canManageWorkflow && (
+          <button
+            type="button"
+            onClick={openModal}
+            className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+          >
+            Подтвердить оплату
+          </button>
+        )}
+        {orderStatus !== "cancelled" && summary.amount_remaining > 0 && !canManageWorkflow && (
           <button
             type="button"
             onClick={openModal}
@@ -278,6 +340,16 @@ export default function StaffOrderPaymentSection({
           </button>
         )}
       </div>
+
+      {orderStatus === "new" && !summary.invoice_number && canManageWorkflow && (
+        <div
+          className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          Не удалось автоматически сформировать счёт. Сформируйте счёт вручную и
+          переведите заказ в «Ожидает оплаты».
+        </div>
+      )}
 
       {summary.has_payment_shortfall && (
         <div
@@ -319,10 +391,52 @@ export default function StaffOrderPaymentSection({
             Статус
           </dt>
           <dd className="mt-1 text-lg font-semibold text-neutral-900">
-            {ORDER_PAYMENT_STATUS_LABELS[summary.payment_status]}
+            {claimReported
+              ? "Клиент сообщил об оплате"
+              : ORDER_PAYMENT_STATUS_LABELS[summary.payment_status]}
           </dd>
+          {claimReported && claim?.created_at && (
+            <p className="mt-1 text-sm text-neutral-500">
+              {new Date(claim.created_at).toLocaleString("ru-RU", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+          )}
         </div>
       </dl>
+
+      {claimReported && canManageWorkflow && (
+        <p className="mt-4 text-sm text-neutral-600">
+          Проверьте поступление вне платформы (банк / Kaspi), затем подтвердите
+          фактическую сумму кнопкой «Подтвердить оплату».
+        </p>
+      )}
+      {claimReported && !canManageWorkflow && (
+        <p className="mt-4 text-sm text-neutral-600">
+          Клиент сообщил об оплате. Регистрация суммы — через «Добавить оплату».
+          Перевод заказа в «Оплачен» выполняет менеджер или администратор.
+        </p>
+      )}
+
+      {claim?.status === "confirmed" && (
+        <p className="mt-4 text-sm text-neutral-600">
+          Сообщение клиента подтверждено
+          {claim.resolved_by_name ? ` · ${claim.resolved_by_name}` : ""}
+          {claim.resolved_at
+            ? ` · ${new Date(claim.resolved_at).toLocaleString("ru-RU")}`
+            : ""}
+          {confirmedPayment
+            ? ` · ${formatPrice(confirmedPayment.amount)}`
+            : ""}
+          {claim.confirmed_payment_id
+            ? ` · платёж ${claim.confirmed_payment_id.slice(0, 8)}`
+            : ""}
+        </p>
+      )}
 
       {canMarkPaid && (
         <div className="mt-4">
@@ -342,11 +456,27 @@ export default function StaffOrderPaymentSection({
         </div>
       )}
 
-      {markPaidBlocked && (
-        <p className="mt-4 text-sm text-neutral-500">
-          Перевод в «Оплачен» недоступен — не хватает{" "}
-          {formatPrice(Math.max(summary.amount_remaining, 0))}.
-        </p>
+      {kaspiPath && (
+        <div className="mt-5 rounded-md border border-neutral-100 bg-neutral-50 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+            Kaspi QR компании
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Постоянный QR. Не подтверждает оплату и не заменяет счёт.
+          </p>
+          {qrLoadedFor === kaspiPath && qrUrl ? (
+            <div className="mt-2 w-24 overflow-hidden rounded border border-neutral-200 bg-white p-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qrUrl} alt="" className="h-auto w-full object-contain" />
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-neutral-500">
+              {qrLoadedFor === kaspiPath
+                ? "Изображение QR сейчас недоступно. Счёт на оплату не затронут."
+                : "Загрузка QR…"}
+            </p>
+          )}
+        </div>
       )}
 
       <div className="mt-6">
@@ -426,14 +556,16 @@ export default function StaffOrderPaymentSection({
               id="payment-dialog-title"
               className="text-lg font-semibold text-neutral-800"
             >
-              Добавить оплату
+              {canManageWorkflow ? "Подтвердить оплату" : "Добавить оплату"}
             </h2>
             <p className="mt-1 text-sm text-neutral-500">
               Остаток сейчас: {formatPrice(summary.amount_remaining)}
             </p>
             <form onSubmit={handleRecordPayment} className="mt-4 flex flex-col gap-3">
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-neutral-700">Сумма</span>
+                <span className="font-medium text-neutral-700">
+                  {canManageWorkflow ? "Фактически поступило" : "Сумма"}
+                </span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -460,38 +592,45 @@ export default function StaffOrderPaymentSection({
                 <select
                   value={methodDraft}
                   onChange={(e) =>
-                    setMethodDraft(e.target.value as OrderPaymentMethod)
+                    setMethodDraft(e.target.value as StaffConfirmPaymentMethod)
                   }
                   disabled={saveBusy}
                   className={inputClass}
                 >
-                  {ORDER_PAYMENT_METHODS.map((method) => (
+                  {(canManageWorkflow
+                    ? STAFF_CONFIRM_PAYMENT_METHODS
+                    : ORDER_PAYMENT_METHODS
+                  ).map((method) => (
                     <option key={method} value={method}>
                       {ORDER_PAYMENT_METHOD_LABELS[method]}
                     </option>
                   ))}
                 </select>
               </label>
+              {!canManageWorkflow && (
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-neutral-700">
+                    Номер платёжного документа
+                  </span>
+                  <input
+                    type="text"
+                    value={referenceDraft}
+                    onChange={(e) => setReferenceDraft(e.target.value)}
+                    maxLength={100}
+                    disabled={saveBusy}
+                    className={inputClass}
+                  />
+                </label>
+              )}
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-neutral-700">
-                  Номер платёжного документа
+                  Комментарий{canManageWorkflow ? " (необязательно)" : ""}
                 </span>
-                <input
-                  type="text"
-                  value={referenceDraft}
-                  onChange={(e) => setReferenceDraft(e.target.value)}
-                  maxLength={100}
-                  disabled={saveBusy}
-                  className={inputClass}
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-neutral-700">Комментарий</span>
                 <textarea
                   value={commentDraft}
                   onChange={(e) => setCommentDraft(e.target.value)}
                   rows={2}
-                  maxLength={1000}
+                  maxLength={canManageWorkflow ? 993 : 1000}
                   disabled={saveBusy}
                   className={inputClass}
                 />
@@ -522,7 +661,11 @@ export default function StaffOrderPaymentSection({
                   }
                   className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:bg-neutral-300 ${focusRing}`}
                 >
-                  {saveBusy ? "Сохранение..." : "Зарегистрировать"}
+                  {saveBusy
+                    ? "Сохранение..."
+                    : canManageWorkflow
+                      ? "Подтвердить"
+                      : "Зарегистрировать"}
                 </button>
                 <button
                   type="button"

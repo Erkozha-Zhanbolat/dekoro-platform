@@ -33,6 +33,7 @@ function mapSettings(row: OrganizationSettings): OrganizationSettings {
     logo_path: row.logo_path ?? null,
     stamp_path: row.stamp_path ?? null,
     signature_path: row.signature_path ?? null,
+    kaspi_qr_path: row.kaspi_qr_path ?? null,
     updated_by: row.updated_by,
     created_at: row.created_at,
     updated_at: row.updated_at,

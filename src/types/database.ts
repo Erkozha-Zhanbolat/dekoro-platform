@@ -969,8 +969,8 @@ export const ORDER_DOCUMENT_STATUS_LABELS: Record<OrderDocumentStatus, string> =
   cancelled: "Отменён",
 };
 
-/** Singleton public.organization_settings (014 + 016 assets). */
-export type OrganizationAssetKind = "logo" | "stamp" | "signature";
+/** Singleton public.organization_settings (014 + 016 assets + 033 Kaspi QR). */
+export type OrganizationAssetKind = "logo" | "stamp" | "signature" | "kaspi_qr";
 
 export type OrganizationSettings = {
   id: string;
@@ -998,6 +998,8 @@ export type OrganizationSettings = {
   logo_path: string | null;
   stamp_path: string | null;
   signature_path: string | null;
+  /** Permanent company Kaspi QR (033). Not a payment integration. */
+  kaspi_qr_path: string | null;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
@@ -1370,17 +1372,27 @@ export type OrderPaymentMethod =
   | "card_terminal"
   | "other";
 
-export const ORDER_PAYMENT_METHOD_LABELS: Record<OrderPaymentMethod, string> = {
+/** Stage 33 confirm modal. Kaspi is stored via 022 `other` + comment. */
+export type StaffConfirmPaymentMethod = OrderPaymentMethod | "kaspi";
+
+export const ORDER_PAYMENT_METHOD_LABELS: Record<StaffConfirmPaymentMethod, string> = {
   bank_transfer: "Банковский перевод",
   cash: "Наличные",
   card_terminal: "Карта (терминал)",
   other: "Другое",
+  kaspi: "Kaspi",
 };
 
 export const ORDER_PAYMENT_METHODS: readonly OrderPaymentMethod[] = [
   "bank_transfer",
   "cash",
   "card_terminal",
+  "other",
+];
+
+export const STAFF_CONFIRM_PAYMENT_METHODS: readonly StaffConfirmPaymentMethod[] = [
+  "bank_transfer",
+  "kaspi",
   "other",
 ];
 
@@ -1440,7 +1452,9 @@ export type OrderActivityEventType =
   | "payment_recorded"
   | "payment_reversed"
   | "payment_completed"
-  | "payment_shortfall_after_reversal";
+  | "payment_shortfall_after_reversal"
+  | "payment_claimed"
+  | "invoice_generation_failed";
 
 export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string> = {
   manager_assigned: "Менеджер назначен",
@@ -1450,6 +1464,8 @@ export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string>
   payment_reversed: "Оплата сторнирована",
   payment_completed: "Заказ оплачен полностью",
   payment_shortfall_after_reversal: "Недофинансирование после сторно",
+  payment_claimed: "Клиент сообщил об оплате",
+  invoice_generation_failed: "Не удалось сформировать счёт",
 };
 
 /** Staff in-app notification types (029 + 030_workflow_notifications.sql). */
@@ -1463,7 +1479,9 @@ export type StaffNotificationType =
   | "order_shipped"
   | "low_stock"
   | "customer_registered"
-  | "stock_received";
+  | "stock_received"
+  | "payment_claimed"
+  | "invoice_generation_failed";
 
 export const STAFF_NOTIFICATION_TYPE_LABELS: Record<StaffNotificationType, string> = {
   new_order: "Новый заказ",
@@ -1476,6 +1494,8 @@ export const STAFF_NOTIFICATION_TYPE_LABELS: Record<StaffNotificationType, strin
   low_stock: "Низкий остаток",
   customer_registered: "Новый клиент",
   stock_received: "Поступление товара",
+  payment_claimed: "Клиент сообщил об оплате",
+  invoice_generation_failed: "Не удалось сформировать счёт",
 };
 
 /** Row from public.staff_list_notifications. */
@@ -1578,6 +1598,16 @@ export type StaffOrderPaymentItem = {
   reversal_reason: string | null;
 };
 
+export type OrderPaymentClaimStatus = "reported" | "confirmed";
+
+export const ORDER_PAYMENT_CLAIM_STATUS_LABELS: Record<
+  OrderPaymentClaimStatus,
+  string
+> = {
+  reported: "Клиент сообщил об оплате",
+  confirmed: "Оплата подтверждена",
+};
+
 /** Client-safe summary from public.client_get_order_payment_summary. */
 export type ClientOrderPaymentSummary = {
   amount_due: number;
@@ -1585,6 +1615,27 @@ export type ClientOrderPaymentSummary = {
   amount_remaining: number;
   payment_status: OrderPaymentStatus;
   invoice_number: string | null;
+};
+
+/** Client payment block from public.client_get_order_payment_flow (033). */
+export type ClientOrderPaymentFlow = ClientOrderPaymentSummary & {
+  invoice_id: string | null;
+  kaspi_qr_path: string | null;
+  claim_id: string | null;
+  claim_status: OrderPaymentClaimStatus | null;
+  claim_created_at: string | null;
+};
+
+/** Staff claim + Kaspi path from public.staff_get_order_payment_claim (033). */
+export type StaffOrderPaymentClaim = {
+  claim_id: string | null;
+  status: OrderPaymentClaimStatus | null;
+  created_at: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolved_by_name: string | null;
+  confirmed_payment_id: string | null;
+  kaspi_qr_path: string | null;
 };
 
 /** Aggregate from public.staff_get_customer_receivables. */

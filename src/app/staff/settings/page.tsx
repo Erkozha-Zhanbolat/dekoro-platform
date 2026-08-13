@@ -43,6 +43,7 @@ const ASSET_HINTS: Record<OrganizationAssetKind, string> = {
   logo: "PNG / JPEG / WEBP, до 2 МБ",
   stamp: "Предпочтительно PNG с прозрачностью, до 3 МБ",
   signature: "Предпочтительно PNG с прозрачностью, до 2 МБ",
+  kaspi_qr: "Постоянный QR компании. PNG / JPEG / WEBP, до 2 МБ",
 };
 
 export default function StaffOrganizationSettingsPage() {
@@ -495,6 +496,26 @@ export default function StaffOrganizationSettingsPage() {
                 />
               );
             })}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-neutral-800">
+            Kaspi QR для оплаты
+          </h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Постоянный QR компании для быстрой оплаты. Не является платёжной
+            интеграцией и не подтверждает оплату. Счёт на оплату остаётся основным
+            документом.
+          </p>
+          <div className="mt-4 max-w-xs">
+            <AssetCard
+              key={`kaspi_qr:${settings?.kaspi_qr_path ?? "empty"}`}
+              kind="kaspi_qr"
+              path={settings?.kaspi_qr_path ?? null}
+              disabled={!isAdmin}
+              onChanged={onAssetChanged}
+            />
           </div>
         </section>
 
