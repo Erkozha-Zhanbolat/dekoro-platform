@@ -284,6 +284,149 @@ export function canRecordStockReceipt(role: UserRole | null | undefined): boolea
   return role === "admin" || role === "warehouse";
 }
 
+/** 1C Excel inventory reconciliation — warehouse + admin; not manager/accountant. */
+export function canAccessInventoryReconciliation(
+  role: UserRole | null | undefined,
+): boolean {
+  return role === "admin" || role === "warehouse";
+}
+
+export type InventoryReconciliationStatus =
+  | "draft"
+  | "reviewed"
+  | "partially_applied"
+  | "applied"
+  | "cancelled";
+
+export type InventoryReconciliationMatchStatus =
+  | "matched_equal"
+  | "matched_difference"
+  | "missing_in_dekoro"
+  | "missing_in_source"
+  | "duplicate_source"
+  | "invalid";
+
+export type InventoryReconciliationApplyStatus =
+  | "pending"
+  | "applied"
+  | "conflict"
+  | "skipped";
+
+export type InventoryReconciliationConflictCode = "reservation_conflict" | "stale";
+
+export type InventoryReconciliation = {
+  id: string;
+  reconciliation_number: string;
+  source_type: "1c_excel";
+  source_file_name: string;
+  warehouse_id: string;
+  status: InventoryReconciliationStatus;
+  total_rows: number;
+  matched_rows: number;
+  equal_rows: number;
+  different_rows: number;
+  missing_in_dekoro_rows: number;
+  missing_in_source_rows: number;
+  duplicate_rows: number;
+  invalid_rows: number;
+  applied_rows: number;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+  applied_by: string | null;
+  applied_by_name: string | null;
+  applied_at: string | null;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type InventoryReconciliationItem = {
+  id: string;
+  reconciliation_id: string;
+  product_id: string | null;
+  product_name: string | null;
+  product_sku: string | null;
+  source_sku: string | null;
+  source_name: string | null;
+  source_quantity: number | null;
+  platform_quantity: number | null;
+  reserved_quantity: number | null;
+  available_quantity: number | null;
+  difference: number | null;
+  match_status: InventoryReconciliationMatchStatus;
+  apply_status: InventoryReconciliationApplyStatus;
+  conflict_code: InventoryReconciliationConflictCode | null;
+  conflict_message: string | null;
+  applied_quantity: number | null;
+  applied_adjustment_id: string | null;
+  source_row_number: number | null;
+  duplicate_count: number | null;
+  error_message: string | null;
+  created_at: string;
+};
+
+export type InventoryReconciliationListItem = {
+  id: string;
+  reconciliation_number: string;
+  source_file_name: string;
+  status: InventoryReconciliationStatus;
+  total_rows: number;
+  matched_rows: number;
+  equal_rows: number;
+  different_rows: number;
+  missing_in_dekoro_rows: number;
+  missing_in_source_rows: number;
+  duplicate_rows: number;
+  invalid_rows: number;
+  applied_rows: number;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+  applied_by: string | null;
+  applied_by_name: string | null;
+  applied_at: string | null;
+};
+
+export type InventoryReconciliationApplyResult = {
+  applied_count: number;
+  stale_count: number;
+  reservation_conflict_count: number;
+  already_applied_count: number;
+  skipped_count: number;
+  increased_count: number;
+  decreased_count: number;
+};
+
+export type InventoryReconciliationPayload = {
+  reconciliation: InventoryReconciliation;
+  items: InventoryReconciliationItem[];
+  apply_result?: InventoryReconciliationApplyResult;
+};
+
+export const INVENTORY_RECONCILIATION_STATUS_LABELS: Record<
+  InventoryReconciliationStatus,
+  string
+> = {
+  draft: "Черновик",
+  reviewed: "Готова к применению",
+  partially_applied: "Частично применена",
+  applied: "Применена",
+  cancelled: "Отменена",
+};
+
+export const INVENTORY_RECONCILIATION_MATCH_LABELS: Record<
+  InventoryReconciliationMatchStatus,
+  string
+> = {
+  matched_equal: "Совпадает",
+  matched_difference: "Расхождение",
+  missing_in_dekoro: "Не найден в DEKORO",
+  missing_in_source: "Нет в загруженном файле",
+  duplicate_source: "Дубликат в файле",
+  invalid: "Ошибка",
+};
+
 /**
  * Row from public.staff_get_product_inventory / staff_adjust_product_inventory.
  * Quantities are numeric(14,3) in DB — keep as JS number (no integer truncation).

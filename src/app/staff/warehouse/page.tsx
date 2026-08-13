@@ -9,6 +9,7 @@ import { listWarehouseOrders } from "@/lib/staff/warehouse";
 import type { WarehouseOrderListItem } from "@/types/database";
 import {
   ORDER_STATUS_LABELS,
+  canAccessInventoryReconciliation,
   canAccessWarehouseOps,
   type WarehouseQueueStatus,
 } from "@/types/database";
@@ -104,13 +105,23 @@ export default function StaffWarehouseQueuePage() {
             Очередь сборки и отгрузки оплаченных заказов
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setReloadToken((token) => token + 1)}
-          className={`rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
-        >
-          Обновить
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {canAccessInventoryReconciliation(profile?.role) && (
+            <Link
+              href="/staff/inventory/reconciliation"
+              className={`rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
+            >
+              Сверка с 1С
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => setReloadToken((token) => token + 1)}
+            className={`rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
+          >
+            Обновить
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-1 overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-50 p-1">
