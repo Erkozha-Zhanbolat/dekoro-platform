@@ -11,8 +11,19 @@ import { applyAnalyticsConsentDecision } from "@/lib/analytics/track";
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
+const equalButton =
+  `rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-800 transition-colors hover:border-neutral-400 ${focusRing}`;
+
 function subscribe(onStoreChange: () => void): () => void {
   return subscribeAnalyticsConsent(() => onStoreChange());
+}
+
+function useHasMounted(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 }
 
 function useAnalyticsConsentState(): AnalyticsConsent {
@@ -24,9 +35,12 @@ function useAnalyticsConsentState(): AnalyticsConsent {
 }
 
 /**
- * First-visit consent banner — no dark patterns (equal-weight buttons).
+ * First-visit consent banner — rendered only while consent is unset.
+ * Client-only after mount so a stored granted/denied decision never
+ * leaves a leftover SSR banner on screen.
  */
 export function AnalyticsConsentBanner() {
+  const mounted = useHasMounted();
   const consent = useAnalyticsConsentState();
 
   const deny = useCallback(() => {
@@ -37,7 +51,7 @@ export function AnalyticsConsentBanner() {
     applyAnalyticsConsentDecision("granted");
   }, []);
 
-  if (consent !== "unset") {
+  if (!mounted || consent !== "unset") {
     return null;
   }
 
@@ -52,18 +66,10 @@ export function AnalyticsConsentBanner() {
           Мы используем аналитику, чтобы улучшать каталог и работу платформы.
         </p>
         <div className="flex flex-shrink-0 flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={deny}
-            className={`rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-300 ${focusRing}`}
-          >
+          <button type="button" onClick={deny} className={equalButton}>
             Отказаться
           </button>
-          <button
-            type="button"
-            onClick={allow}
-            className={`rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-800 transition-colors hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
-          >
+          <button type="button" onClick={allow} className={equalButton}>
             Разрешить
           </button>
         </div>
@@ -103,7 +109,7 @@ export function AnalyticsConsentSettings({
               : "border border-neutral-200 text-neutral-700 hover:border-[#0F766E]"
           }`}
         >
-          Разрешить
+          Разрешить аналитику
         </button>
         <button
           type="button"

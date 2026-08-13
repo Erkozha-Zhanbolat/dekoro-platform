@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatPrice } from "@/lib/formatPrice";
 import {
   ORDER_PAYMENT_STATUS_LABELS,
@@ -80,9 +80,16 @@ function StaffOrdersPageContent({
 }: {
   searchParams: ReturnType<typeof useSearchParams>;
 }) {
+  const router = useRouter();
   const { profile } = useProfile();
   const canCreateOrder = profile?.role === "manager" || profile?.role === "admin";
   const canSeePayments = canAccessOrderPayments(profile?.role);
+
+  useEffect(() => {
+    if (profile?.role === "warehouse") {
+      router.replace("/staff/warehouse");
+    }
+  }, [profile?.role, router]);
 
   const urlOps = parseOps(searchParams.get("ops"));
   const urlStatusRaw = searchParams.get("status");
@@ -121,7 +128,7 @@ function StaffOrdersPageContent({
   const currentKey = `${debouncedSearch}:${statusFilter}:${opsFilter ?? ""}:${testFilter}:${reloadToken}:${canSeePayments ? "pay" : "nopay"}`;
 
   useEffect(() => {
-    if (loadedKey === currentKey) {
+    if (profile?.role === "warehouse" || loadedKey === currentKey) {
       return;
     }
 
@@ -183,7 +190,7 @@ function StaffOrdersPageContent({
     return () => {
       ignore = true;
     };
-  }, [debouncedSearch, statusFilter, opsFilter, testFilter, currentKey, loadedKey, canSeePayments]);
+  }, [profile?.role, debouncedSearch, statusFilter, opsFilter, testFilter, currentKey, loadedKey, canSeePayments]);
 
   const loading = loadedKey !== currentKey;
 
@@ -233,6 +240,14 @@ function StaffOrdersPageContent({
           : opsFilter === "unassigned"
             ? "Без менеджера"
             : null;
+
+  if (profile?.role === "warehouse") {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <p className="text-sm text-neutral-500">Загрузка...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

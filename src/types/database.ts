@@ -279,16 +279,34 @@ export function canReadProducts(role: UserRole | null | undefined): boolean {
   return role === "admin" || role === "manager" || role === "warehouse";
 }
 
-/** Explicit stock receipt (оприходование) — warehouse + admin; not manager. */
+/** Explicit stock receipt (оприходование) — admin only (032). */
 export function canRecordStockReceipt(role: UserRole | null | undefined): boolean {
-  return role === "admin" || role === "warehouse";
+  return role === "admin";
 }
 
-/** 1C Excel inventory reconciliation — warehouse + admin; not manager/accountant. */
+/**
+ * Receipt / adjustment history on the product card.
+ * Manager keeps read because the existing product UI shows those lists.
+ * Warehouse is denied — their history is shipment history, not inventory writes.
+ */
+export function canViewInventoryMovementHistory(
+  role: UserRole | null | undefined,
+): boolean {
+  return role === "admin" || role === "manager";
+}
+
+/** 1C Excel inventory reconciliation — admin only (032). */
 export function canAccessInventoryReconciliation(
   role: UserRole | null | undefined,
 ): boolean {
-  return role === "admin" || role === "warehouse";
+  return role === "admin";
+}
+
+/** Shipment history — warehouse + admin. Manager is not auto-granted. */
+export function canAccessWarehouseHistory(
+  role: UserRole | null | undefined,
+): boolean {
+  return role === "warehouse" || role === "admin";
 }
 
 export type InventoryReconciliationStatus =
@@ -1268,6 +1286,50 @@ export type WarehouseOrderPickingDetails = {
 export function canAccessWarehouseOps(role: UserRole | null | undefined): boolean {
   return role === "warehouse" || role === "manager" || role === "admin";
 }
+
+/** Row from public.staff_list_warehouse_shipment_history(...). */
+export type WarehouseShipmentHistoryItem = {
+  order_id: string;
+  order_number: string;
+  customer_display_name: string;
+  shipped_at: string;
+  line_count: number;
+  total_quantity: number;
+  picked_by_name: string | null;
+  shipped_by_name: string | null;
+  status: OrderStatus;
+  total_count: number;
+};
+
+export type WarehouseShipmentHistoryItemLine = {
+  product_id: string;
+  product_sku: string | null;
+  product_name: string;
+  quantity: number;
+};
+
+export type WarehouseShipmentHistoryTimeline = {
+  paid_at: string | null;
+  picking_started_at: string | null;
+  picking_completed_at: string | null;
+  shipped_at: string | null;
+};
+
+/** Payload from public.staff_get_warehouse_shipment_history_order(...). */
+export type WarehouseShipmentHistoryOrder = {
+  order: {
+    id: string;
+    order_number: string;
+    status: OrderStatus;
+    created_at: string;
+  };
+  customer_display_name: string;
+  shipped_at: string;
+  picked_by_name: string | null;
+  shipped_by_name: string | null;
+  items: WarehouseShipmentHistoryItemLine[];
+  timeline: WarehouseShipmentHistoryTimeline;
+};
 
 export type WarehouseActivityEventType =
   | "picking_started"

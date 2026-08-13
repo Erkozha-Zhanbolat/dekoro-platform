@@ -65,11 +65,21 @@ export function setAnalyticsConsent(value: "granted" | "denied"): void {
   }
 }
 
-/** Subscribe to consent changes (banner / settings). */
+/** Subscribe to consent changes (banner / settings) and other-tab storage. */
 export function subscribeAnalyticsConsent(listener: ConsentListener): () => void {
   listeners.add(listener);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== CONSENT_KEY && event.key !== null) return;
+    listener(getAnalyticsConsent());
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", onStorage);
+  }
   return () => {
     listeners.delete(listener);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("storage", onStorage);
+    }
   };
 }
 

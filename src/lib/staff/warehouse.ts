@@ -10,6 +10,8 @@ import type {
   WarehouseOrderListItem,
   WarehouseOrderPickingDetails,
   WarehouseQueueStatus,
+  WarehouseShipmentHistoryItem,
+  WarehouseShipmentHistoryOrder,
 } from "@/types/database";
 import { WAREHOUSE_QUEUE_STATUSES } from "@/types/database";
 
@@ -246,4 +248,91 @@ export async function listWarehouseOrderActivity(
     created_by_name: (row.created_by_name as string | null) ?? null,
     created_at: String(row.created_at),
   }));
+}
+
+export type WarehouseShipmentHistoryQuery = {
+  from?: string | null;
+  to?: string | null;
+  search?: string;
+  limit?: number;
+  offset?: number;
+};
+
+function mapHistoryRow(row: Record<string, unknown>): WarehouseShipmentHistoryItem {
+  return {
+    order_id: String(row.order_id),
+    order_number: String(row.order_number),
+    customer_display_name: String(row.customer_display_name ?? ""),
+    shipped_at: String(row.shipped_at),
+    line_count: Number(row.line_count ?? 0),
+    total_quantity: Number(row.total_quantity ?? 0),
+    picked_by_name: (row.picked_by_name as string | null) ?? null,
+    shipped_by_name: (row.shipped_by_name as string | null) ?? null,
+    status: row.status as OrderStatus,
+    total_count: Number(row.total_count ?? 0),
+  };
+}
+
+export async function listWarehouseShipmentHistory(
+  query: WarehouseShipmentHistoryQuery = {},
+): Promise<WarehouseShipmentHistoryItem[]> {
+  const { data, error } = await supabase.rpc("staff_list_warehouse_shipment_history", {
+    p_from: query.from ?? null,
+    p_to: query.to ?? null,
+    p_search: query.search?.trim() || null,
+    p_limit: query.limit ?? DEFAULT_LIMIT,
+    p_offset: query.offset ?? 0,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить историю отгрузок");
+  }
+
+  return ((data as Record<string, unknown>[] | null) ?? []).map(mapHistoryRow);
+}
+
+export async function getWarehouseShipmentHistoryOrder(
+  orderId: string,
+): Promise<WarehouseShipmentHistoryOrder> {
+  const { data, error } = await supabase.rpc("staff_get_warehouse_shipment_history_order", {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить отгруженный заказ");
+  }
+
+  if (!data || typeof data !== "object") {
+    throw new Error("Пустой ответ истории отгрузки");
+  }
+
+  const raw = data as Record<string, unknown>;
+  const order = raw.order as Record<string, unknown>;
+  const timeline = (raw.timeline as Record<string, unknown> | null) ?? {};
+  const items = ((raw.items as Record<string, unknown>[] | null) ?? []).map((item) => ({
+    product_id: String(item.product_id ?? ""),
+    product_sku: (item.product_sku as string | null) ?? null,
+    product_name: String(item.product_name ?? ""),
+    quantity: Number(item.quantity ?? 0),
+  }));
+
+  return {
+    order: {
+      id: String(order.id),
+      order_number: String(order.order_number),
+      status: order.status as OrderStatus,
+      created_at: String(order.created_at),
+    },
+    customer_display_name: String(raw.customer_display_name ?? ""),
+    shipped_at: String(raw.shipped_at),
+    picked_by_name: (raw.picked_by_name as string | null) ?? null,
+    shipped_by_name: (raw.shipped_by_name as string | null) ?? null,
+    items,
+    timeline: {
+      paid_at: (timeline.paid_at as string | null) ?? null,
+      picking_started_at: (timeline.picking_started_at as string | null) ?? null,
+      picking_completed_at: (timeline.picking_completed_at as string | null) ?? null,
+      shipped_at: (timeline.shipped_at as string | null) ?? null,
+    },
+  };
 }

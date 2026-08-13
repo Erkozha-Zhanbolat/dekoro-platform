@@ -43,6 +43,7 @@ import {
   canManageProducts,
   canReadProducts,
   canRecordStockReceipt,
+  canViewInventoryMovementHistory,
   type StaffProductStatus,
 } from "@/types/database";
 import { StaffProductAnalytics } from "@/components/staff/StaffProductAnalytics";
@@ -72,6 +73,7 @@ export default function StaffProductDetailPage() {
   const canRead = canReadProducts(profile?.role);
   const canManage = canManageProducts(profile?.role);
   const canReceipt = canRecordStockReceipt(profile?.role);
+  const canViewMovements = canViewInventoryMovementHistory(profile?.role);
   const canEditPricing = profile?.role === "admin";
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -163,8 +165,12 @@ export default function StaffProductDetailPage() {
       getStaffProduct(productId),
       listStaffCategories(true),
       getStaffProductInventory(productId),
-      listStaffProductInventoryAdjustments(productId, 20),
-      listStaffProductStockReceipts(productId, 20).catch(() => [] as StaffStockReceipt[]),
+      canViewMovements
+        ? listStaffProductInventoryAdjustments(productId, 20)
+        : Promise.resolve([] as StaffInventoryAdjustment[]),
+      canViewMovements
+        ? listStaffProductStockReceipts(productId, 20)
+        : Promise.resolve([] as StaffStockReceipt[]),
     ])
       .then(([row, cats, inv, history, receiptHistory]) => {
         if (ignore) return;
@@ -187,7 +193,7 @@ export default function StaffProductDetailPage() {
     return () => {
       ignore = true;
     };
-  }, [productId, canRead, loadedKey]);
+  }, [productId, canRead, canViewMovements, loadedKey]);
 
   function syncGroupPriceDrafts(rows: ProductGroupPriceRow[]) {
     const next: Record<string, string> = {};
@@ -428,8 +434,12 @@ export default function StaffProductDetailPage() {
     if (!productId) return;
     const [inv, history, receiptHistory] = await Promise.all([
       getStaffProductInventory(productId),
-      listStaffProductInventoryAdjustments(productId, 20),
-      listStaffProductStockReceipts(productId, 20).catch(() => [] as StaffStockReceipt[]),
+      canViewMovements
+        ? listStaffProductInventoryAdjustments(productId, 20)
+        : Promise.resolve([] as StaffInventoryAdjustment[]),
+      canViewMovements
+        ? listStaffProductStockReceipts(productId, 20)
+        : Promise.resolve([] as StaffStockReceipt[]),
     ]);
     setInventory(inv);
     setAdjustments(history);
@@ -1243,6 +1253,7 @@ export default function StaffProductDetailPage() {
           </form>
         )}
 
+        {canViewMovements && (
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
             История поступлений
@@ -1276,7 +1287,9 @@ export default function StaffProductDetailPage() {
             </ul>
           )}
         </div>
+        )}
 
+        {canViewMovements && (
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
             История корректировок
@@ -1315,22 +1328,23 @@ export default function StaffProductDetailPage() {
               ))}
             </ul>
           )}
-          {inventoryError === null && canRead && (
-            <button
-              type="button"
-              onClick={() => {
-                refreshInventory().catch((error: unknown) => {
-                  setInventoryError(
-                    error instanceof Error ? error.message : "Ошибка обновления остатка",
-                  );
-                });
-              }}
-              className={`mt-2 text-xs font-medium text-[#0F766E] ${focusRing}`}
-            >
-              Обновить остаток
-            </button>
-          )}
         </div>
+        )}
+        {inventoryError === null && canRead && (
+          <button
+            type="button"
+            onClick={() => {
+              refreshInventory().catch((error: unknown) => {
+                setInventoryError(
+                  error instanceof Error ? error.message : "Ошибка обновления остатка",
+                );
+              });
+            }}
+            className={`self-start text-xs font-medium text-[#0F766E] ${focusRing}`}
+          >
+            Обновить остаток
+          </button>
+        )}
       </section>
 
       {copyOpen && (

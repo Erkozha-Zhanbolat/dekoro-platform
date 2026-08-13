@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
 import { searchStaffCustomers } from "@/lib/staff/customers";
 import type { StaffCustomerSearchResult } from "@/lib/staff/customers";
@@ -28,8 +29,15 @@ function formatDate(iso: string | null): string {
 }
 
 export default function StaffCustomersPage() {
+  const router = useRouter();
   const { profile } = useProfile();
   const canManage = profile?.role === "manager" || profile?.role === "admin";
+
+  useEffect(() => {
+    if (profile?.role === "warehouse") {
+      router.replace("/staff/warehouse");
+    }
+  }, [profile?.role, router]);
 
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -45,7 +53,7 @@ export default function StaffCustomersPage() {
   }, [searchInput]);
 
   useEffect(() => {
-    if (loadedKey === debouncedSearch) {
+    if (profile?.role === "warehouse" || loadedKey === debouncedSearch) {
       return;
     }
 
@@ -71,9 +79,17 @@ export default function StaffCustomersPage() {
     return () => {
       ignore = true;
     };
-  }, [debouncedSearch, loadedKey]);
+  }, [profile?.role, debouncedSearch, loadedKey]);
 
   const loading = loadedKey !== debouncedSearch;
+
+  if (profile?.role === "warehouse") {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <p className="text-sm text-neutral-500">Загрузка...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

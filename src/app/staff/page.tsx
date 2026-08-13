@@ -157,11 +157,48 @@ function StaffOrdersHome() {
   );
 }
 
+function WarehouseHome() {
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-bold text-neutral-800">Склад</h1>
+        <p className="mt-1 text-sm text-neutral-500">
+          Сборка, отгрузка и история отгруженных заказов
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Link
+          href="/staff/warehouse"
+          className="rounded-lg border border-neutral-200 bg-white p-5 transition-colors hover:border-[#0F766E]"
+        >
+          <p className="text-lg font-semibold text-neutral-800">Текущие заказы</p>
+          <p className="mt-1 text-sm text-neutral-500">
+            Оплаченные, в сборке и готовые к отгрузке
+          </p>
+        </Link>
+        <Link
+          href="/staff/warehouse/history"
+          className="rounded-lg border border-neutral-200 bg-white p-5 transition-colors hover:border-[#0F766E]"
+        >
+          <p className="text-lg font-semibold text-neutral-800">История отгрузок</p>
+          <p className="mt-1 text-sm text-neutral-500">
+            Уже отгруженные заказы и состав товаров
+          </p>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function StaffDashboardPage() {
   const { profile } = useProfile();
 
   if (profile?.role === "admin") {
     return <AdminDirectorDashboard />;
+  }
+
+  if (profile?.role === "warehouse") {
+    return <WarehouseHome />;
   }
 
   return <StaffOrdersHome />;

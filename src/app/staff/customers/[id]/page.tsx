@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useProfile } from "@/context/ProfileContext";
 import { formatPrice } from "@/lib/formatPrice";
@@ -65,8 +65,15 @@ function formatDateTime(iso: string | null): string {
 export default function StaffCustomerDetailPage() {
   const params = useParams();
   const customerId = typeof params.id === "string" ? params.id : "";
+  const router = useRouter();
   const { profile } = useProfile();
   const canManage = profile?.role === "manager" || profile?.role === "admin";
+
+  useEffect(() => {
+    if (profile?.role === "warehouse") {
+      router.replace("/staff/warehouse");
+    }
+  }, [profile?.role, router]);
   const canEditPricing = profile?.role === "admin";
   const canCreateOrder = canManage;
 
@@ -116,7 +123,7 @@ export default function StaffCustomerDetailPage() {
   const [addIndividualError, setAddIndividualError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!customerId) {
+    if (!customerId || profile?.role === "warehouse") {
       return;
     }
 
@@ -184,7 +191,7 @@ export default function StaffCustomerDetailPage() {
     return () => {
       ignore = true;
     };
-  }, [customerId]);
+  }, [customerId, profile?.role]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -410,6 +417,14 @@ export default function StaffCustomerDetailPage() {
         >
           К списку клиентов
         </Link>
+      </div>
+    );
+  }
+
+  if (profile?.role === "warehouse") {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <p className="text-sm text-neutral-500">Загрузка...</p>
       </div>
     );
   }

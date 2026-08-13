@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DELIVERY_TYPE_LABELS } from "@/lib/orders";
 import { isDeadlineOverdue } from "@/lib/staff/orders";
+import WarehouseSectionNav from "@/components/staff/WarehouseSectionNav";
 import { listWarehouseOrders } from "@/lib/staff/warehouse";
 import type { WarehouseOrderListItem } from "@/types/database";
 import {
@@ -106,7 +107,7 @@ export default function StaffWarehouseQueuePage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canAccessInventoryReconciliation(profile?.role) && (
+          {profile?.role === "admin" && canAccessInventoryReconciliation(profile.role) && (
             <Link
               href="/staff/inventory/reconciliation"
               className={`rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:border-[#0F766E] hover:text-[#0F766E] ${focusRing}`}
@@ -123,6 +124,8 @@ export default function StaffWarehouseQueuePage() {
           </button>
         </div>
       </div>
+
+      <WarehouseSectionNav role={profile?.role} />
 
       <div className="flex gap-1 overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-50 p-1">
         {TABS.map((item) => {
