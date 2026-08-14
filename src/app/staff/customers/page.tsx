@@ -6,10 +6,7 @@ import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
 import { searchStaffCustomers } from "@/lib/staff/customers";
 import type { StaffCustomerSearchResult } from "@/lib/staff/customers";
-import {
-  CUSTOMER_SOURCE_LABELS,
-  CUSTOMER_TYPE_LABELS,
-} from "@/types/database";
+import { CUSTOMER_TYPE_LABELS } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -17,15 +14,8 @@ const focusRing =
 const SEARCH_DEBOUNCE_MS = 300;
 const LIST_LIMIT = 50;
 
-function formatDate(iso: string | null): string {
-  if (!iso) {
-    return "—";
-  }
-  return new Date(iso).toLocaleDateString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+function statusLabel(customer: StaffCustomerSearchResult): string {
+  return customer.is_registered ? "Зарегистрирован" : "Без аккаунта";
 }
 
 export default function StaffCustomersPage() {
@@ -97,7 +87,7 @@ export default function StaffCustomersPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-800">Клиенты</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            Единая база клиентов DEKORO — зарегистрированные и созданные вручную
+            Зарегистрированные на сайте и созданные менеджером — физлица, ИП и ТОО
           </p>
         </div>
         {canManage && (
@@ -114,7 +104,7 @@ export default function StaffCustomersPage() {
         type="search"
         value={searchInput}
         onChange={(event) => setSearchInput(event.target.value)}
-        placeholder="Поиск по имени, телефону, email, ИИН/БИН"
+        placeholder="Поиск по имени, телефону, email, ИИН/БИН, городу"
         className={`w-full rounded-md border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] sm:max-w-md ${focusRing}`}
       />
 
@@ -132,45 +122,57 @@ export default function StaffCustomersPage() {
             {debouncedSearch ? "Клиенты не найдены" : "Клиентов пока нет"}
           </p>
         ) : (
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[1100px] text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
-                <th className="px-5 py-3">Имя</th>
+                <th className="px-5 py-3">Клиент</th>
                 <th className="px-5 py-3">Тип</th>
+                <th className="px-5 py-3">БИН / ИИН</th>
+                <th className="px-5 py-3">Город</th>
+                <th className="px-5 py-3">Контакт</th>
                 <th className="px-5 py-3">Телефон</th>
                 <th className="px-5 py-3">Email</th>
-                <th className="px-5 py-3">Город</th>
-                <th className="px-5 py-3">Источник</th>
-                <th className="px-5 py-3 text-right">Заказов</th>
-                <th className="px-5 py-3">Последний заказ</th>
+                <th className="px-5 py-3">Ценовая категория</th>
+                <th className="px-5 py-3">Статус</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody>
-              {customers.map((customer) => (
-                <tr key={customer.id} className="border-b border-neutral-100 last:border-0">
-                  <td className="px-5 py-3 font-medium text-neutral-800">{customer.display_name}</td>
-                  <td className="px-5 py-3 text-neutral-600">
-                    {CUSTOMER_TYPE_LABELS[customer.customer_type]}
-                  </td>
-                  <td className="px-5 py-3 text-neutral-600">{customer.phone ?? "—"}</td>
-                  <td className="px-5 py-3 text-neutral-600">{customer.email ?? "—"}</td>
-                  <td className="px-5 py-3 text-neutral-600">{customer.city ?? "—"}</td>
-                  <td className="px-5 py-3 text-neutral-600">
-                    {customer.source ? CUSTOMER_SOURCE_LABELS[customer.source] : "—"}
-                  </td>
-                  <td className="px-5 py-3 text-right text-neutral-600">{customer.orders_count}</td>
-                  <td className="px-5 py-3 text-neutral-600">{formatDate(customer.last_order_at)}</td>
-                  <td className="px-5 py-3 text-right">
-                    <Link
-                      href={`/staff/customers/${customer.id}`}
-                      className={`text-sm font-medium text-[#0F766E] transition-colors hover:text-[#0c5f58] ${focusRing}`}
-                    >
-                      Открыть
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {customers.map((customer) => {
+                const isCompany = customer.customer_type === "company";
+                const name = isCompany
+                  ? (customer.legal_name || customer.display_name)
+                  : customer.display_name;
+                return (
+                  <tr key={customer.id} className="border-b border-neutral-100 last:border-0">
+                    <td className="px-5 py-3 font-medium text-neutral-800">{name}</td>
+                    <td className="px-5 py-3 text-neutral-600">
+                      {CUSTOMER_TYPE_LABELS[customer.customer_type]}
+                    </td>
+                    <td className="px-5 py-3 text-neutral-600">
+                      {isCompany ? (customer.iin_bin ?? "—") : "—"}
+                    </td>
+                    <td className="px-5 py-3 text-neutral-600">{customer.city ?? "—"}</td>
+                    <td className="px-5 py-3 text-neutral-600">
+                      {isCompany ? (customer.contact_person ?? "—") : "—"}
+                    </td>
+                    <td className="px-5 py-3 text-neutral-600">{customer.phone ?? "—"}</td>
+                    <td className="px-5 py-3 text-neutral-600">{customer.email ?? "—"}</td>
+                    <td className="px-5 py-3 text-neutral-600">
+                      {customer.price_group_name ?? "—"}
+                    </td>
+                    <td className="px-5 py-3 text-neutral-600">{statusLabel(customer)}</td>
+                    <td className="px-5 py-3 text-right">
+                      <Link
+                        href={`/staff/customers/${customer.id}`}
+                        className={`text-sm font-medium text-[#0F766E] transition-colors hover:text-[#0c5f58] ${focusRing}`}
+                      >
+                        Открыть
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

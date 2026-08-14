@@ -116,6 +116,11 @@ export async function searchStaffCustomers(
     company_id: row.company_id,
     orders_count: Number(row.orders_count),
     last_order_at: row.last_order_at,
+    iin_bin: row.iin_bin ?? null,
+    contact_person: row.contact_person ?? null,
+    is_registered: Boolean(row.is_registered),
+    price_group_id: row.price_group_id ?? null,
+    price_group_name: row.price_group_name ?? null,
   }));
 }
 

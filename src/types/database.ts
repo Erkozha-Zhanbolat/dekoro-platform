@@ -123,6 +123,25 @@ export type StaffCustomerSearchResult = {
   company_id: string | null;
   orders_count: number;
   last_order_at: string | null;
+  iin_bin: string | null;
+  contact_person: string | null;
+  is_registered: boolean;
+  price_group_id: string | null;
+  price_group_name: string | null;
+};
+
+/** Client-safe row from public.client_get_my_customer_details(). */
+export type ClientCustomerDetails = {
+  id: string;
+  customer_type: CustomerType;
+  display_name: string;
+  legal_name: string | null;
+  phone: string | null;
+  email: string | null;
+  iin_bin: string | null;
+  contact_person: string | null;
+  address: string | null;
+  city: string | null;
 };
 
 /** Row returned by public.staff_get_customer(p_customer_id). */

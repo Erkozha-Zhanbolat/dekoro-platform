@@ -9,6 +9,7 @@ export type IndividualSignUpMetadata = {
   customer_type: "individual";
   name: string;
   phone: string;
+  city: string;
 };
 
 export type CompanySignUpMetadata = {
@@ -17,6 +18,8 @@ export type CompanySignUpMetadata = {
   bin: string;
   contact_person: string;
   phone: string;
+  city: string;
+  address: string;
 };
 
 export type SignUpMetadata = IndividualSignUpMetadata | CompanySignUpMetadata;

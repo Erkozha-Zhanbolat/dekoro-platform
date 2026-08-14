@@ -8,6 +8,10 @@ import { useAuth } from "@/context/AuthContext";
 import type { SignUpMetadata } from "@/context/AuthContext";
 import { getSafeNextPath, isSafeNextPath } from "@/lib/safeNextPath";
 import { flushAnalytics, linkVisitorToProfile, recordAuthEvent } from "@/lib/analytics/track";
+import {
+  normalizeCustomerEmail,
+  normalizeCustomerPhone,
+} from "@/lib/staff/customerDetails";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -15,12 +19,14 @@ const focusRing =
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BIN_PATTERN = /^\d{12}$/;
 
-type CustomerType = "individual" | "company";
+type RegistrationKind = "individual" | "ip" | "too";
 
 interface FormState {
   name: string;
   companyName: string;
   bin: string;
+  city: string;
+  address: string;
   contactPerson: string;
   phone: string;
   email: string;
@@ -34,6 +40,8 @@ const initialFormState: FormState = {
   name: "",
   companyName: "",
   bin: "",
+  city: "",
+  address: "",
   contactPerson: "",
   phone: "",
   email: "",
@@ -41,15 +49,22 @@ const initialFormState: FormState = {
   confirmPassword: "",
 };
 
-function validate(form: FormState, customerType: CustomerType): FormErrors {
+function validate(form: FormState, kind: RegistrationKind): FormErrors {
   const errors: FormErrors = {};
+  const phone = normalizeCustomerPhone(form.phone);
+  const email = normalizeCustomerEmail(form.email);
+  const city = form.city.trim();
 
-  if (!form.phone.trim()) {
+  if (!phone) {
     errors.phone = "Укажите телефон";
   }
 
-  if (!EMAIL_PATTERN.test(form.email.trim())) {
+  if (!EMAIL_PATTERN.test(email)) {
     errors.email = "Введите корректный email";
+  }
+
+  if (!city) {
+    errors.city = "Укажите город";
   }
 
   if (form.password.length < 6) {
@@ -60,36 +75,46 @@ function validate(form: FormState, customerType: CustomerType): FormErrors {
     errors.confirmPassword = "Пароли не совпадают";
   }
 
-  if (customerType === "individual") {
+  if (kind === "individual") {
     if (!form.name.trim()) {
-      errors.name = "Укажите имя";
+      errors.name = "Укажите ФИО";
     }
-  } else {
-    if (!form.companyName.trim()) {
-      errors.companyName = "Укажите название компании / ИП";
-    }
+    return errors;
+  }
 
-    if (!BIN_PATTERN.test(form.bin.trim())) {
-      errors.bin = "БИН / ИИН должен содержать ровно 12 цифр";
-    }
+  if (!form.companyName.trim()) {
+    errors.companyName =
+      kind === "ip" ? "Укажите наименование ИП" : "Укажите юридическое название";
+  }
 
-    if (!form.contactPerson.trim()) {
-      errors.contactPerson = "Укажите контактное лицо";
-    }
+  if (!BIN_PATTERN.test(form.bin.trim())) {
+    errors.bin =
+      kind === "ip"
+        ? "БИН / ИИН должен содержать ровно 12 цифр"
+        : "БИН должен содержать ровно 12 цифр";
+  }
+
+  if (!form.address.trim()) {
+    errors.address = "Укажите юридический адрес";
+  }
+
+  if (!form.contactPerson.trim()) {
+    errors.contactPerson = "Укажите контактное лицо";
   }
 
   return errors;
 }
 
-function buildSignUpMetadata(
-  form: FormState,
-  customerType: CustomerType,
-): SignUpMetadata {
-  if (customerType === "individual") {
+function buildSignUpMetadata(form: FormState, kind: RegistrationKind): SignUpMetadata {
+  const phone = normalizeCustomerPhone(form.phone);
+  const city = form.city.trim();
+
+  if (kind === "individual") {
     return {
       customer_type: "individual",
       name: form.name.trim(),
-      phone: form.phone.trim(),
+      phone,
+      city,
     };
   }
 
@@ -98,7 +123,9 @@ function buildSignUpMetadata(
     company_name: form.companyName.trim(),
     bin: form.bin.trim(),
     contact_person: form.contactPerson.trim(),
-    phone: form.phone.trim(),
+    phone,
+    city,
+    address: form.address.trim(),
   };
 }
 
@@ -106,7 +133,7 @@ function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signUp } = useAuth();
-  const [customerType, setCustomerType] = useState<CustomerType>("company");
+  const [kind, setKind] = useState<RegistrationKind | null>(null);
   const [form, setForm] = useState<FormState>(initialFormState);
   const [errors, setErrors] = useState<FormErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -124,11 +151,11 @@ function RegisterForm() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function selectCustomerType(nextType: CustomerType) {
-    if (nextType === customerType) {
+  function selectKind(nextKind: RegistrationKind) {
+    if (nextKind === kind) {
       return;
     }
-    setCustomerType(nextType);
+    setKind(nextKind);
     setErrors({});
     setFormError(null);
   }
@@ -137,7 +164,12 @@ function RegisterForm() {
     event.preventDefault();
     setFormError(null);
 
-    const validationErrors = validate(form, customerType);
+    if (!kind) {
+      setFormError("Выберите тип клиента");
+      return;
+    }
+
+    const validationErrors = validate(form, kind);
     setErrors(validationErrors);
 
     if (Object.keys(validationErrors).length > 0) {
@@ -147,9 +179,9 @@ function RegisterForm() {
     setIsSubmitting(true);
 
     const { error, needsEmailConfirmation: requiresConfirmation } = await signUp(
-      form.email.trim(),
+      normalizeCustomerEmail(form.email),
       form.password,
-      buildSignUpMetadata(form, customerType),
+      buildSignUpMetadata(form, kind),
     );
 
     setIsSubmitting(false);
@@ -160,7 +192,6 @@ function RegisterForm() {
     }
 
     if (requiresConfirmation) {
-      // Session may be null — skip authoritative record until confirmed login.
       await flushAnalytics();
       setNeedsEmailConfirmation(true);
       return;
@@ -178,8 +209,10 @@ function RegisterForm() {
         <h1 className="text-3xl font-bold text-neutral-800">Регистрация</h1>
         <p className="mt-4 text-neutral-600">
           Мы отправили письмо для подтверждения на адрес{" "}
-          <span className="font-medium text-neutral-800">{form.email.trim()}</span>.
-          Перейдите по ссылке из письма, чтобы подтвердить email и войти в
+          <span className="font-medium text-neutral-800">
+            {normalizeCustomerEmail(form.email)}
+          </span>
+          . Перейдите по ссылке из письма, чтобы подтвердить email и войти в
           личный кабинет.
         </p>
         <Link
@@ -192,114 +225,202 @@ function RegisterForm() {
     );
   }
 
-  const isIndividual = customerType === "individual";
-
   return (
     <div className="mx-auto max-w-2xl px-6 py-16">
       <h1 className="text-3xl font-bold text-neutral-800">Регистрация</h1>
       <p className="mt-2 text-sm text-neutral-600">
-        {isIndividual
-          ? "Создайте личный аккаунт, чтобы оформлять заказы и отслеживать их статус."
-          : "Создайте аккаунт компании или ИП, чтобы оформлять заказы и отслеживать их статус."}
+        Сначала выберите тип клиента — форма покажет только нужные поля.
       </p>
 
-      <div className="mt-6 flex flex-wrap gap-2" role="group" aria-label="Тип покупателя">
+      <div className="mt-6 flex flex-wrap gap-2" role="group" aria-label="Тип клиента">
         <TypeToggle
           label="Физическое лицо"
-          active={isIndividual}
-          onClick={() => selectCustomerType("individual")}
+          active={kind === "individual"}
+          onClick={() => selectKind("individual")}
         />
         <TypeToggle
-          label="Компания / ИП"
-          active={!isIndividual}
-          onClick={() => selectCustomerType("company")}
+          label="ИП"
+          active={kind === "ip"}
+          onClick={() => selectKind("ip")}
+        />
+        <TypeToggle
+          label="ТОО"
+          active={kind === "too"}
+          onClick={() => selectKind("too")}
         />
       </div>
 
-      <form onSubmit={handleSubmit} noValidate className="mt-8 flex flex-col gap-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {isIndividual ? (
-            <TextField
-              label="Имя"
-              value={form.name}
-              onChange={(value) => updateField("name", value)}
-              error={errors.name}
-              autoComplete="name"
-              className="sm:col-span-2"
-            />
+      {!kind ? (
+        <p className="mt-8 text-sm text-neutral-500">Выберите тип клиента, чтобы продолжить.</p>
+      ) : (
+        <form onSubmit={handleSubmit} noValidate className="mt-8 flex flex-col gap-8">
+          {kind === "individual" ? (
+            <section className="flex flex-col gap-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                Личные данные
+              </h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <TextField
+                  label="ФИО"
+                  value={form.name}
+                  onChange={(value) => updateField("name", value)}
+                  error={errors.name}
+                  autoComplete="name"
+                  className="sm:col-span-2"
+                />
+                <TextField
+                  label="Город"
+                  value={form.city}
+                  onChange={(value) => updateField("city", value)}
+                  error={errors.city}
+                  autoComplete="address-level2"
+                  placeholder="Алматы"
+                />
+                <TextField
+                  label="Телефон"
+                  value={form.phone}
+                  onChange={(value) => updateField("phone", value)}
+                  error={errors.phone}
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                />
+                <TextField
+                  label="Email"
+                  value={form.email}
+                  onChange={(value) => updateField("email", value)}
+                  error={errors.email}
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  className="sm:col-span-2"
+                />
+              </div>
+            </section>
           ) : (
             <>
-              <TextField
-                label="Название компании / ИП"
-                value={form.companyName}
-                onChange={(value) => updateField("companyName", value)}
-                error={errors.companyName}
-                autoComplete="organization"
-              />
-              <TextField
-                label="БИН / ИИН"
-                value={form.bin}
-                onChange={(value) => updateField("bin", value)}
-                error={errors.bin}
-                inputMode="numeric"
-                maxLength={12}
-              />
-              <TextField
-                label="Контактное лицо"
-                value={form.contactPerson}
-                onChange={(value) => updateField("contactPerson", value)}
-                error={errors.contactPerson}
-                autoComplete="name"
-                className="sm:col-span-2"
-              />
+              <section className="flex flex-col gap-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                  {kind === "ip" ? "Об ИП" : "О компании"}
+                </h2>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <TextField
+                    label={kind === "ip" ? "Юридическое название / Наименование ИП" : "Юридическое название"}
+                    value={form.companyName}
+                    onChange={(value) => updateField("companyName", value)}
+                    error={errors.companyName}
+                    autoComplete="organization"
+                    placeholder={kind === "ip" ? "ИП Иванов" : "ТОО DEKORO TRADE"}
+                    className="sm:col-span-2"
+                  />
+                  <TextField
+                    label={kind === "ip" ? "БИН / ИИН бизнеса" : "БИН"}
+                    value={form.bin}
+                    onChange={(value) => updateField("bin", value)}
+                    error={errors.bin}
+                    inputMode="numeric"
+                    maxLength={12}
+                    placeholder="123456789012"
+                  />
+                </div>
+              </section>
+
+              <section className="flex flex-col gap-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                  Адрес
+                </h2>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Город"
+                    value={form.city}
+                    onChange={(value) => updateField("city", value)}
+                    error={errors.city}
+                    autoComplete="address-level2"
+                    placeholder="Алматы"
+                  />
+                  <TextField
+                    label="Юридический адрес"
+                    value={form.address}
+                    onChange={(value) => updateField("address", value)}
+                    error={errors.address}
+                    autoComplete="street-address"
+                    placeholder="г. Алматы, ул. Абая, 150, офис 25"
+                    className="sm:col-span-2"
+                  />
+                </div>
+              </section>
+
+              <section className="flex flex-col gap-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                  Контактные данные
+                </h2>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Контактное лицо"
+                    value={form.contactPerson}
+                    onChange={(value) => updateField("contactPerson", value)}
+                    error={errors.contactPerson}
+                    autoComplete="name"
+                    className="sm:col-span-2"
+                  />
+                  <TextField
+                    label="Телефон"
+                    value={form.phone}
+                    onChange={(value) => updateField("phone", value)}
+                    error={errors.phone}
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                  />
+                  <TextField
+                    label="Email"
+                    value={form.email}
+                    onChange={(value) => updateField("email", value)}
+                    error={errors.email}
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                  />
+                </div>
+              </section>
             </>
           )}
-          <TextField
-            label="Телефон"
-            value={form.phone}
-            onChange={(value) => updateField("phone", value)}
-            error={errors.phone}
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-          />
-          <TextField
-            label="Email"
-            value={form.email}
-            onChange={(value) => updateField("email", value)}
-            error={errors.email}
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-          />
-          <TextField
-            label="Пароль"
-            value={form.password}
-            onChange={(value) => updateField("password", value)}
-            error={errors.password}
-            type="password"
-            autoComplete="new-password"
-          />
-          <TextField
-            label="Подтверждение пароля"
-            value={form.confirmPassword}
-            onChange={(value) => updateField("confirmPassword", value)}
-            error={errors.confirmPassword}
-            type="password"
-            autoComplete="new-password"
-          />
-        </div>
 
-        {formError && <p className="text-sm text-red-600">{formError}</p>}
+          <section className="flex flex-col gap-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              Доступ
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField
+                label="Пароль"
+                value={form.password}
+                onChange={(value) => updateField("password", value)}
+                error={errors.password}
+                type="password"
+                autoComplete="new-password"
+              />
+              <TextField
+                label="Подтверждение пароля"
+                value={form.confirmPassword}
+                onChange={(value) => updateField("confirmPassword", value)}
+                error={errors.confirmPassword}
+                type="password"
+                autoComplete="new-password"
+              />
+            </div>
+          </section>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className={`mt-2 self-start rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
-        >
-          {isSubmitting ? "Регистрируем..." : "Зарегистрироваться"}
-        </button>
-      </form>
+          {formError && <p className="text-sm text-red-600">{formError}</p>}
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className={`self-start rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
+          >
+            {isSubmitting ? "Регистрируем..." : "Зарегистрироваться"}
+          </button>
+        </form>
+      )}
 
       <p className="mt-6 text-sm text-neutral-600">
         Уже есть аккаунт?{" "}
@@ -360,6 +481,7 @@ function TextField({
   inputMode,
   maxLength,
   autoComplete,
+  placeholder,
   className,
 }: {
   label: string;
@@ -370,12 +492,13 @@ function TextField({
   inputMode?: "text" | "numeric" | "tel" | "email";
   maxLength?: number;
   autoComplete?: string;
+  placeholder?: string;
   className?: string;
 }) {
   return (
     <div className={className}>
       <label className="block text-sm font-medium text-neutral-700">
-        {label}
+        {label} <span className="text-red-500">*</span>
       </label>
       <input
         type={type}
@@ -384,6 +507,7 @@ function TextField({
         inputMode={inputMode}
         maxLength={maxLength}
         autoComplete={autoComplete}
+        placeholder={placeholder}
         className={`mt-1 w-full rounded-md border px-3 py-2 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 ${
           error
             ? "border-red-300 focus:border-red-400 focus:ring-1 focus:ring-red-400"

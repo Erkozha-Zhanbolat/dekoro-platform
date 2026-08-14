@@ -68,6 +68,11 @@ function StaffNewOrderForm() {
           company_id: customer.company_id,
           orders_count: customer.orders_count,
           last_order_at: customer.last_order_at,
+          iin_bin: customer.iin_bin,
+          contact_person: customer.contact_person,
+          is_registered: customer.is_registered,
+          price_group_id: customer.price_group_id,
+          price_group_name: customer.price_group_name,
         });
         setPreselectError(null);
       })
@@ -254,7 +259,7 @@ function StaffNewOrderForm() {
                 CUSTOMER_TYPE_LABELS[selectedCustomer.customer_type],
                 selectedCustomer.phone,
                 selectedCustomer.email,
-                selectedCustomer.profile_id ? "Зарегистрирован" : "Без аккаунта",
+                selectedCustomer.is_registered ? "Зарегистрирован" : "Без аккаунта",
               ]
                 .filter(Boolean)
                 .join(" · ")}

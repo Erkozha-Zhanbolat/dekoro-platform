@@ -44,7 +44,7 @@ export function StaffCustomerDetailsFields({
             />
           </label>
           <label className="flex flex-col gap-1.5">
-            <FieldLabel>БИН *</FieldLabel>
+            <FieldLabel>БИН / ИИН *</FieldLabel>
             <input
               required
               disabled={disabled}
@@ -64,7 +64,7 @@ export function StaffCustomerDetailsFields({
               onChange={(event) => onChange({ address: event.target.value })}
               rows={2}
               className={inputClass}
-              placeholder="Индекс, город, улица, дом"
+              placeholder="г. Алматы, ул. Абая, 150, офис 25"
             />
             <span className="text-xs text-neutral-500">
               Адрес для счёта. Не путать с адресом доставки или складом.
@@ -122,12 +122,14 @@ export function StaffCustomerDetailsFields({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
-          <FieldLabel>Город</FieldLabel>
+          <FieldLabel>Город *</FieldLabel>
           <input
+            required
             disabled={disabled}
             value={values.city}
             onChange={(event) => onChange({ city: event.target.value })}
             className={inputClass}
+            placeholder="Алматы"
           />
         </label>
         <label className="flex flex-col gap-1.5">

@@ -65,6 +65,9 @@ export function validateCustomerDetailsForm(
     if (!EMAIL_RE.test(email)) {
       return "Укажите корректный email";
     }
+    if (!values.city.trim()) {
+      return "Укажите город";
+    }
     return null;
   }
 
@@ -72,7 +75,10 @@ export function validateCustomerDetailsForm(
     return "Укажите юридическое название";
   }
   if (!values.iin_bin.trim()) {
-    return "Укажите БИН";
+    return "Укажите БИН / ИИН";
+  }
+  if (!values.city.trim()) {
+    return "Укажите город";
   }
   if (!values.address.trim()) {
     return "Укажите юридический адрес";

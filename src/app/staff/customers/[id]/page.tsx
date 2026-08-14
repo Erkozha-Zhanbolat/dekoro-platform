@@ -479,6 +479,13 @@ export default function StaffCustomerDetailPage() {
         </p>
       )}
 
+      {!customer.city?.trim() && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Не указан город.
+          {canManage ? " Нажмите «Редактировать» и заполните поле." : ""}
+        </p>
+      )}
+
       <div className="grid gap-4 rounded-lg border border-neutral-200 bg-white p-5 sm:grid-cols-2">
         {customer.customer_type === "company" ? (
           <>
@@ -489,8 +496,12 @@ export default function StaffCustomerDetailPage() {
               <p className="mt-1 text-sm text-neutral-800">{customer.legal_name ?? "—"}</p>
             </div>
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">БИН</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">БИН / ИИН</p>
               <p className="mt-1 text-sm text-neutral-800">{customer.iin_bin ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Город</p>
+              <p className="mt-1 text-sm text-neutral-800">{customer.city ?? "—"}</p>
             </div>
             <div className="sm:col-span-2">
               <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
@@ -506,10 +517,16 @@ export default function StaffCustomerDetailPage() {
             </div>
           </>
         ) : (
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">ФИО</p>
-            <p className="mt-1 text-sm text-neutral-800">{customer.display_name}</p>
-          </div>
+          <>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">ФИО</p>
+              <p className="mt-1 text-sm text-neutral-800">{customer.display_name}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Город</p>
+              <p className="mt-1 text-sm text-neutral-800">{customer.city ?? "—"}</p>
+            </div>
+          </>
         )}
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Телефон</p>
@@ -518,10 +535,6 @@ export default function StaffCustomerDetailPage() {
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Email</p>
           <p className="mt-1 text-sm text-neutral-800">{customer.email ?? "—"}</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Город</p>
-          <p className="mt-1 text-sm text-neutral-800">{customer.city ?? "—"}</p>
         </div>
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Источник</p>
