@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import AuthRedirectGate from "@/components/AuthRedirectGate";
 import { AuthProvider } from "@/context/AuthContext";
 import { ProfileProvider } from "@/context/ProfileContext";
 import { CatalogProvider } from "@/context/CatalogContext";
@@ -45,6 +46,7 @@ export default function RootLayout({
               <FavoritesProvider>
                 <CartProvider>
                   <Suspense fallback={null}>
+                    <AuthRedirectGate />
                     <AnalyticsProvider>
                       <Header />
                       <main className="flex-1">{children}</main>

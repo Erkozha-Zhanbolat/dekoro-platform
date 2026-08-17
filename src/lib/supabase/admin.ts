@@ -34,6 +34,9 @@ export function getAppBaseUrl(): string {
   // Prefer server-only APP_URL for invite redirectTo. NEXT_PUBLIC_APP_URL is
   // the documented public mirror for local/prod config — never take redirect
   // from request body / query.
+  // Production must be the exact public origin, e.g. https://app.dekoro.kz
+  // (no trailing slash). If this is missing, GoTrue rejects redirectTo and
+  // falls back to the Dashboard Site URL, skipping /set-password.
   const configured =
     process.env.APP_URL?.trim() ||
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||

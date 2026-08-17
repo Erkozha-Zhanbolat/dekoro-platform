@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useAuth } from "@/context/AuthContext";
 import {
   MIN_PASSWORD_LENGTH,
+  MUST_SET_PASSWORD_METADATA_KEY,
   readAuthRedirectError,
   validateNewPassword,
 } from "@/lib/auth/passwordSetup";
@@ -21,6 +23,7 @@ type GateStatus = "loading" | "ready" | "invalid";
 
 function SetPasswordForm() {
   const router = useRouter();
+  const { completePasswordSetup } = useAuth();
   const [gate, setGate] = useState<GateStatus>("loading");
   const [gateError, setGateError] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -100,6 +103,7 @@ function SetPasswordForm() {
     setIsSubmitting(true);
     const { error: updateError } = await supabase.auth.updateUser({
       password,
+      data: { [MUST_SET_PASSWORD_METADATA_KEY]: false },
     });
     setIsSubmitting(false);
 
@@ -112,6 +116,7 @@ function SetPasswordForm() {
       return;
     }
 
+    completePasswordSetup();
     router.replace("/staff");
   }
 

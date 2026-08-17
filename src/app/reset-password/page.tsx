@@ -7,6 +7,7 @@ import type { FormEvent } from "react";
 import { supabase } from "@/lib/supabase/client";
 import {
   MIN_PASSWORD_LENGTH,
+  clearAuthRedirectIntent,
   readAuthRedirectError,
   validateNewPassword,
 } from "@/lib/auth/passwordSetup";
@@ -117,6 +118,7 @@ function ResetPasswordForm() {
       return;
     }
 
+    clearAuthRedirectIntent();
     router.replace("/login");
   }
 

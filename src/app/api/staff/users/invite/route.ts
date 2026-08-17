@@ -10,6 +10,7 @@ import {
   getAppBaseUrl,
   isServiceRoleConfigured,
 } from "@/lib/supabase/admin";
+import { MUST_SET_PASSWORD_METADATA_KEY } from "@/lib/auth/passwordSetup";
 
 export const runtime = "nodejs";
 
@@ -149,6 +150,32 @@ async function sendInviteEmail(
 }
 
 /**
+ * Merge onboarding metadata onto the auth user. inviteUserByEmail sets it on
+ * create; reinvite/resend does not always rewrite user_metadata.
+ */
+async function ensureInviteOnboardingMetadata(
+  service: SupabaseClient,
+  userId: string,
+  inviteMeta: Record<string, unknown>,
+): Promise<void> {
+  const { data, error } = await service.auth.admin.getUserById(userId);
+  if (error || !data.user) {
+    return;
+  }
+  const current = (data.user.user_metadata ?? {}) as Record<string, unknown>;
+  const { error: updateError } = await service.auth.admin.updateUserById(userId, {
+    user_metadata: {
+      ...current,
+      ...inviteMeta,
+      [MUST_SET_PASSWORD_METADATA_KEY]: true,
+    },
+  });
+  if (updateError) {
+    console.error("[staff invite] onboarding metadata", updateError.message);
+  }
+}
+
+/**
  * Invite state machine (server-only):
  *
  * none → inviteUserByEmail → wait profile → finalize
@@ -222,6 +249,7 @@ export async function POST(request: Request) {
     const redirectTo = `${getAppBaseUrl()}/set-password`;
     const inviteMeta = {
       dekoro_staff_invite: true,
+      [MUST_SET_PASSWORD_METADATA_KEY]: true,
       staff_role: role,
       full_name: fullName,
       name: fullName,
@@ -277,6 +305,8 @@ export async function POST(request: Request) {
       if (reinviteError && !isAlreadyRegisteredError(reinviteError)) {
         // Continue to finalize — email may already be outstanding.
       }
+
+      await ensureInviteOnboardingMetadata(service, existing.profile_id, inviteMeta);
 
       try {
         // Pending client bootstrap → first-time finalize (is_reinvite=false)
@@ -351,6 +381,7 @@ export async function POST(request: Request) {
             (ALLOWED_ROLES.has(existing.role) && !existing.email_confirmed))
         ) {
           try {
+            await ensureInviteOnboardingMetadata(service, existing.profile_id, inviteMeta);
             const row = await finalizeInvite(client, {
               profileId: existing.profile_id,
               role,
@@ -387,6 +418,8 @@ export async function POST(request: Request) {
       });
       return genericInviteError();
     }
+
+    await ensureInviteOnboardingMetadata(service, userId, inviteMeta);
 
     const profileReady = await waitForProfile(service, userId);
     if (!profileReady) {

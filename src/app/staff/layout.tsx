@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
 import { canAccessStaff } from "@/types/database";
 import StaffShell from "@/components/staff/StaffShell";
+import { getStoredAuthIntent } from "@/lib/auth/passwordSetup";
 
 /**
  * Gate for the entire /staff/** section.
@@ -22,26 +23,38 @@ import StaffShell from "@/components/staff/StaffShell";
  */
 export default function StaffLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, needsPasswordSetup } = useAuth();
   const { profile, profileLoading } = useProfile();
 
-  const loading = authLoading || (!!user && profileLoading);
+  const loading = authLoading || (!!user && !needsPasswordSetup && profileLoading);
   const role = profile?.role ?? null;
   const isActive = profile?.is_active === true;
-  const allowed = !loading && !!user && canAccessStaff(role) && isActive;
+  const allowed =
+    !loading &&
+    !!user &&
+    !needsPasswordSetup &&
+    canAccessStaff(role) &&
+    isActive;
 
   useEffect(() => {
-    if (loading) {
+    if (authLoading) {
+      return;
+    }
+    if (needsPasswordSetup || getStoredAuthIntent() === "invite") {
+      router.replace("/set-password");
       return;
     }
     if (!user) {
       router.replace(`/login?next=${encodeURIComponent("/staff")}`);
       return;
     }
+    if (profileLoading) {
+      return;
+    }
     if (!canAccessStaff(role) || !isActive) {
       router.replace("/");
     }
-  }, [loading, user, role, isActive, router]);
+  }, [authLoading, profileLoading, user, role, isActive, needsPasswordSetup, router]);
 
   if (loading || !allowed || !profile) {
     return (

@@ -4,6 +4,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
+import {
+  captureAuthRedirectIntent,
+  clearAuthRedirectIntent,
+  userNeedsPasswordSetup,
+} from "@/lib/auth/passwordSetup";
 
 export type IndividualSignUpMetadata = {
   customer_type: "individual";
@@ -28,6 +33,8 @@ interface AuthContextValue {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  needsPasswordSetup: boolean;
+  completePasswordSetup: () => void;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (
     email: string,
@@ -42,15 +49,20 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [passwordSetupCleared, setPasswordSetupCleared] = useState(false);
 
   useEffect(() => {
+    captureAuthRedirectIntent();
+
     supabase.auth.getSession().then(({ data }) => {
+      captureAuthRedirectIntent();
       setSession(data.session);
       setLoading(false);
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event, nextSession) => {
+        captureAuthRedirectIntent();
         setSession(nextSession);
         setLoading(false);
       },
@@ -66,6 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password,
     });
+    if (!error) {
+      clearAuthRedirectIntent();
+      setPasswordSetupCleared(false);
+    }
     return { error: error?.message ?? null };
   }, []);
 
@@ -90,6 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    clearAuthRedirectIntent();
+    setPasswordSetupCleared(false);
     await supabase.auth.signOut();
     // Shared-computer boundary: rotate visitor so the next account cannot
     // link/inherit this browser's prior anonymous or linked history.
@@ -107,16 +125,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const completePasswordSetup = useCallback(() => {
+    clearAuthRedirectIntent();
+    setPasswordSetupCleared(true);
+  }, []);
+
+  const needsPasswordSetup =
+    !passwordSetupCleared && userNeedsPasswordSetup(session?.user ?? null);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user: session?.user ?? null,
       session,
       loading,
+      needsPasswordSetup,
+      completePasswordSetup,
       signIn,
       signUp,
       signOut,
     }),
-    [session, loading, signIn, signUp, signOut],
+    [session, loading, needsPasswordSetup, completePasswordSetup, signIn, signUp, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

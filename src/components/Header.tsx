@@ -160,7 +160,7 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
   const { totalQuantity } = useCart();
-  const { user } = useAuth();
+  const { user, needsPasswordSetup } = useAuth();
   const { profile } = useProfile();
   const { favoriteProductIds } = useFavorites();
   const profileHref = user ? "/profile" : "/login";
@@ -171,12 +171,16 @@ export default function Header() {
   const favoritesLabel = showFavoritesCount
     ? `Избранное (${favoriteProductIds.length})`
     : "Избранное";
-  const showStaffLink = canAccessStaff(profile?.role ?? null);
+  const showStaffLink = canAccessStaff(profile?.role ?? null) && !needsPasswordSetup;
 
   // The Staff Platform (/staff/**) has its own dedicated shell/navigation
   // (see src/components/staff/StaffShell.tsx) — the customer-facing header
-  // is only for the storefront.
-  if (pathname?.startsWith("/staff")) {
+  // is only for the storefront. Password setup/recovery should stay focused.
+  if (
+    pathname?.startsWith("/staff") ||
+    pathname === "/set-password" ||
+    pathname === "/reset-password"
+  ) {
     return null;
   }
 
