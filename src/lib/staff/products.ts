@@ -17,7 +17,7 @@ export type {
 export type StaffProductWriteInput = {
   sku: string;
   name: string;
-  category_id: string;
+  category_id: string | null;
   subcategory_id?: string | null;
   status: StaffProductStatus;
   base_price?: number | null;
@@ -157,7 +157,7 @@ export async function createStaffProduct(
   const { data, error } = await supabase.rpc("staff_create_product", {
     p_sku: input.sku,
     p_name: input.name,
-    p_category_id: input.category_id,
+    p_category_id: input.category_id || null,
     p_subcategory_id: input.subcategory_id || null,
     p_status: input.status,
     p_base_price: input.base_price ?? null,
@@ -184,7 +184,7 @@ export async function updateStaffProduct(
     p_product_id: productId,
     p_sku: input.sku,
     p_name: input.name,
-    p_category_id: input.category_id,
+    p_category_id: input.category_id || null,
     p_subcategory_id: input.subcategory_id || null,
     p_status: input.status,
     p_base_price: input.base_price ?? null,

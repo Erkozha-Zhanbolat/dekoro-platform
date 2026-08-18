@@ -98,7 +98,7 @@ export default function StaffNewProductPage() {
       setError("Минимальный заказ должен быть больше 0");
       return;
     }
-    if (!categoryId) {
+    if (!categoryId && status === "active") {
       setError("Выберите категорию");
       return;
     }
@@ -106,7 +106,7 @@ export default function StaffNewProductPage() {
     const input: StaffProductWriteInput = {
       sku,
       name,
-      category_id: categoryId,
+      category_id: categoryId || null,
       subcategory_id: subcategoryId || null,
       status,
       base_price: price,
@@ -191,10 +191,10 @@ export default function StaffNewProductPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-                Категория *
+                {status === "active" ? "Категория *" : "Категория"}
               </span>
               <select
-                required
+                required={status === "active"}
                 value={categoryId}
                 onChange={(e) => {
                   setCategoryId(e.target.value);

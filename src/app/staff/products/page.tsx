@@ -381,6 +381,7 @@ export default function StaffProductsPage() {
           className={inputClass}
         >
           <option value="">Все статусы</option>
+          <option value="draft">{STAFF_PRODUCT_STATUS_LABELS.draft}</option>
           <option value="active">{STAFF_PRODUCT_STATUS_LABELS.active}</option>
           <option value="archived">{STAFF_PRODUCT_STATUS_LABELS.archived}</option>
         </select>
@@ -553,6 +554,13 @@ function StatusBadge({ status }: { status: string }) {
     return (
       <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
         Активен
+      </span>
+    );
+  }
+  if (status === "draft") {
+    return (
+      <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+        Черновик
       </span>
     );
   }

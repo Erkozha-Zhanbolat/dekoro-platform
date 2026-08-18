@@ -44,9 +44,11 @@ import {
   canReadProducts,
   canRecordStockReceipt,
   canViewInventoryMovementHistory,
+  canAccessProductSupplies,
   type StaffProductStatus,
 } from "@/types/database";
 import { StaffProductAnalytics } from "@/components/staff/StaffProductAnalytics";
+import StaffProductLandedCostHistory from "@/components/staff/StaffProductLandedCostHistory";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -75,6 +77,7 @@ export default function StaffProductDetailPage() {
   const canReceipt = canRecordStockReceipt(profile?.role);
   const canViewMovements = canViewInventoryMovementHistory(profile?.role);
   const canEditPricing = profile?.role === "admin";
+  const canSeeLandedCost = canAccessProductSupplies(profile?.role);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -145,7 +148,9 @@ export default function StaffProductDetailPage() {
     setName(row.name);
     setCategoryId(row.category_id ?? "");
     setSubcategoryId(row.subcategory_id ?? "");
-    setStatus(row.status === "archived" ? "archived" : "active");
+    setStatus(
+      row.status === "archived" ? "archived" : row.status === "draft" ? "draft" : "active",
+    );
     setBasePrice(toInputNumber(row.base_price));
     setMinOrderQty(toInputNumber(row.min_order_qty) || "1");
     setUnit(row.unit || "шт.");
@@ -371,7 +376,7 @@ export default function StaffProductDetailPage() {
     const input: StaffProductWriteInput = {
       sku,
       name,
-      category_id: categoryId,
+      category_id: categoryId || null,
       subcategory_id: subcategoryId || null,
       status,
       base_price: price,
@@ -720,10 +725,10 @@ export default function StaffProductDetailPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-                Категория *
+                {status === "active" ? "Категория *" : "Категория"}
               </span>
               <select
-                required
+                required={status === "active"}
                 disabled={readOnly}
                 value={categoryId}
                 onChange={(e) => {
@@ -776,6 +781,11 @@ export default function StaffProductDetailPage() {
                 </option>
               ))}
             </select>
+            {status === "draft" ? (
+              <p className="text-xs text-amber-700">
+                Черновик не показывается в клиентском каталоге, пока статус не станет «Активен».
+              </p>
+            ) : null}
           </label>
         </section>
 
@@ -1045,6 +1055,8 @@ export default function StaffProductDetailPage() {
       <div className="mt-6">
         <StaffProductAnalytics productId={productId} />
       </div>
+
+      {canSeeLandedCost ? <StaffProductLandedCostHistory productId={productId} /> : null}
 
       <section className="mt-6 flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">

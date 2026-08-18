@@ -185,10 +185,11 @@ export interface Profile {
 
 export type ProductStatus = "draft" | "active" | "archived";
 
-/** Staff product management UI statuses (Stage 19). Draft remains in DB for legacy rows. */
-export type StaffProductStatus = "active" | "archived";
+/** Staff product management UI statuses. Draft = unpublished, hidden from get_catalog(). */
+export type StaffProductStatus = "draft" | "active" | "archived";
 
 export const STAFF_PRODUCT_STATUS_LABELS: Record<StaffProductStatus, string> = {
+  draft: "Черновик",
   active: "Активен",
   archived: "Архив",
 };
@@ -1680,4 +1681,171 @@ export function canAccessOrderPayments(role: UserRole | null | undefined): boole
 /** Roles that may reverse a payment. */
 export function canReverseOrderPayments(role: UserRole | null | undefined): boolean {
   return role === "accountant" || role === "admin";
+}
+
+/** Stage 38 — financial product supplies (landed cost). Admin only. */
+export type ProductSupplyStatus = "draft" | "closed";
+export type ProductSupplyCurrency = "KZT" | "CNY" | "USD";
+
+export const PRODUCT_SUPPLY_STATUS_LABELS: Record<ProductSupplyStatus, string> = {
+  draft: "Черновик",
+  closed: "Закрыта",
+};
+
+export const PRODUCT_SUPPLY_CURRENCY_LABELS: Record<ProductSupplyCurrency, string> = {
+  KZT: "KZT",
+  CNY: "CNY",
+  USD: "USD",
+};
+
+export const PRODUCT_SUPPLY_CURRENCIES: readonly ProductSupplyCurrency[] = [
+  "KZT",
+  "CNY",
+  "USD",
+];
+
+export type ProductSupplyExpensePreset = {
+  key: string;
+  name: string;
+};
+
+/** Suggested expense names; admin can still add any custom article. */
+export const PRODUCT_SUPPLY_EXPENSE_PRESETS: readonly ProductSupplyExpensePreset[] = [
+  { key: "customs", name: "Таможня" },
+  { key: "duty", name: "Пошлина" },
+  { key: "vat", name: "НДС" },
+  { key: "svh", name: "СВХ" },
+  { key: "urumqi_khorgos", name: "Урумчи → Хоргос" },
+  { key: "export_customs", name: "Затаможка" },
+  { key: "reload", name: "Перегрузка" },
+  { key: "khorgos_almaty", name: "Хоргос → Алматы" },
+  { key: "transit_declaration", name: "Транзитная декларация" },
+  { key: "broker", name: "Брокер" },
+  { key: "other", name: "Другие расходы" },
+];
+
+export type ProductSupplyListItem = {
+  id: string;
+  sequence_number: number;
+  supply_number: string;
+  title: string;
+  supplier_name: string | null;
+  supply_date: string;
+  status: ProductSupplyStatus;
+  gross_weight_kg: number | null;
+  total_expenses_kzt: number | null;
+  expense_per_kg: number | null;
+  total_landed_cost_kzt: number | null;
+  items_count: number;
+  created_at: string;
+  closed_at: string | null;
+};
+
+export type ProductSupplyHeader = {
+  id: string;
+  sequence_number: number;
+  supply_number: string;
+  title: string;
+  supplier_name: string | null;
+  supply_date: string;
+  default_currency: ProductSupplyCurrency;
+  default_exchange_rate_to_kzt: number | null;
+  gross_weight_kg: number | null;
+  notes: string | null;
+  status: ProductSupplyStatus;
+  source_kind: "manual" | "import";
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+  closed_by: string | null;
+  is_preliminary: boolean;
+};
+
+export type ProductSupplyItem = {
+  id: string;
+  supply_id: string;
+  product_id: string;
+  sku: string;
+  name: string;
+  original_sku: string | null;
+  product_status: ProductStatus;
+  sort_order: number;
+  quantity: number;
+  unit: string;
+  purchase_currency: ProductSupplyCurrency;
+  purchase_price_per_unit: number | null;
+  exchange_rate_to_kzt: number | null;
+  purchase_price_per_unit_kzt: number | null;
+  unit_net_weight_kg: number | null;
+  total_net_weight_kg: number | null;
+  item_weight_share: number | null;
+  allocated_gross_weight_kg: number | null;
+  gross_weight_per_unit_kg: number | null;
+  allocated_expenses_kzt: number | null;
+  expense_per_unit_kzt: number | null;
+  purchase_total_kzt: number | null;
+  landed_cost_per_unit_kzt: number | null;
+  landed_cost_total_kzt: number | null;
+};
+
+export type ProductSupplyExpense = {
+  id: string;
+  supply_id: string;
+  category_key: string;
+  name: string;
+  amount: number;
+  currency: ProductSupplyCurrency;
+  exchange_rate_to_kzt: number | null;
+  amount_kzt: number | null;
+  expense_date: string | null;
+  notes: string | null;
+  sort_order: number;
+};
+
+export type ProductSupplyTotals = {
+  total_net_weight_kg: number | null;
+  gross_weight_kg: number | null;
+  packaging_weight_kg: number | null;
+  packaging_weight_pct: number | null;
+  total_purchase_kzt: number | null;
+  total_expenses_kzt: number | null;
+  expense_per_kg: number | null;
+  total_landed_cost_kzt: number | null;
+  gross_lt_net: boolean;
+};
+
+export type ProductSupplyPayload = {
+  supply: ProductSupplyHeader;
+  items: ProductSupplyItem[];
+  expenses: ProductSupplyExpense[];
+  totals: ProductSupplyTotals;
+};
+
+export type ProductSupplyProductSearch = {
+  id: string;
+  sku: string;
+  name: string;
+  original_sku: string | null;
+  unit: string;
+  status: ProductStatus;
+  weight_kg: number | null;
+};
+
+export type ProductLandedCostHistoryItem = {
+  supply_id: string;
+  supply_number: string;
+  sequence_number: number;
+  title: string;
+  supply_date: string;
+  status: ProductSupplyStatus;
+  quantity: number;
+  unit: string;
+  landed_cost_per_unit_kzt: number | null;
+  is_preliminary: boolean;
+  closed_at: string | null;
+};
+
+export function canAccessProductSupplies(role: UserRole | null | undefined): boolean {
+  return role === "admin";
 }
