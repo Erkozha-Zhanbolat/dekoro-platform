@@ -35,6 +35,11 @@ import {
   type ProductSupplyCurrency,
   type StaffProductStatus,
 } from "@/types/database";
+import SupplySectionNav, { type SupplyTabId } from "@/components/staff/supply/SupplySectionNav";
+import SupplyDualStatus from "@/components/staff/supply/SupplyDualStatus";
+import SupplyComparisonPanel from "@/components/staff/supply/SupplyComparisonPanel";
+import SupplyDocumentsPanel from "@/components/staff/supply/SupplyDocumentsPanel";
+import SupplyLogisticsPanel from "@/components/staff/supply/SupplyLogisticsPanel";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -80,6 +85,7 @@ export default function StaffSupplyDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<SupplyTabId>("overview");
 
   useEffect(() => {
     if (!profileLoading && profile && !allowed) {
@@ -287,8 +293,16 @@ export default function StaffSupplyDetailPage() {
             <span className="ml-3 text-lg font-normal text-neutral-500">{supply.title}</span>
           </h1>
           <p className="mt-1 text-sm text-neutral-500">
-            {isPreliminary ? "Предварительная себестоимость — расчёт обновляется при каждом изменении." : "Закрытая поставка. Финансовый snapshot зафиксирован."}
+            {isPreliminary
+              ? "Предварительная себестоимость — расчёт обновляется при каждом изменении."
+              : "Закрытая поставка. Финансовый snapshot зафиксирован. Документы и логистика доступны."}
           </p>
+          <div className="mt-3">
+            <SupplyDualStatus
+              logisticsStatus={supply.logistics_status}
+              financialStatus={supply.status}
+            />
+          </div>
         </div>
         <span
           className={
@@ -301,6 +315,20 @@ export default function StaffSupplyDetailPage() {
         </span>
       </div>
 
+      <SupplySectionNav
+        active={tab}
+        onChange={setTab}
+        counts={{
+          items: items.length,
+          comparison: payload.comparison.length,
+          expenses: expenses.length,
+          documents: payload.documents.length,
+          history: payload.logistics_history.length,
+        }}
+      />
+
+      {tab === "overview" ? (
+      <>
       <section className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-5 sm:grid-cols-2 lg:grid-cols-4">
         <HeaderStat label="Поставщик" value={supply.supplier_name ?? "—"} />
         <HeaderStat
@@ -424,7 +452,10 @@ export default function StaffSupplyDetailPage() {
           </p>
         ) : null}
       </section>
+      </>
+      ) : null}
 
+      {tab === "items" ? (
       <section className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Товары</h2>
@@ -592,7 +623,20 @@ export default function StaffSupplyDetailPage() {
           </div>
         )}
       </section>
+      ) : null}
 
+      {tab === "comparison" ? (
+        <section className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Заказ / Отгрузка</h2>
+          <p className="text-xs text-neutral-500">
+            Заказанные значения не затираются. После подтверждения накладной фактические количества и цены
+            становятся основой расчёта себестоимости Stage 38.
+          </p>
+          <SupplyComparisonPanel rows={payload.comparison} />
+        </section>
+      ) : null}
+
+      {tab === "expenses" ? (
       <section className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Расходы поставки</h2>
@@ -621,6 +665,7 @@ export default function StaffSupplyDetailPage() {
                   <th className="px-3 py-2 font-medium">Валюта</th>
                   <th className="px-3 py-2 font-medium">Курс</th>
                   <th className="px-3 py-2 font-medium">Сумма KZT</th>
+                  <th className="px-3 py-2 font-medium">Документы</th>
                   {!readOnly ? <th className="px-3 py-2 font-medium" /> : null}
                 </tr>
               </thead>
@@ -639,6 +684,11 @@ export default function StaffSupplyDetailPage() {
                     <td className="px-3 py-2">{row.currency}</td>
                     <td className="px-3 py-2">{formatSupplyRate(row.exchange_rate_to_kzt)}</td>
                     <td className="px-3 py-2 font-medium">{formatSupplyMoney(row.amount_kzt)}</td>
+                    <td className="px-3 py-2 text-xs text-neutral-600">
+                      {row.linked_documents.length === 0
+                        ? "—"
+                        : row.linked_documents.map((doc) => doc.original_filename).join(", ")}
+                    </td>
                     {!readOnly ? (
                       <td className="px-3 py-2">
                         <button
@@ -657,7 +707,29 @@ export default function StaffSupplyDetailPage() {
           </div>
         )}
       </section>
+      ) : null}
 
+      {tab === "documents" ? (
+        <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-neutral-500">Документы</h2>
+          <SupplyDocumentsPanel payload={payload} onUpdated={applyPayload} />
+        </section>
+      ) : null}
+
+      {tab === "history" ? (
+        <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-neutral-500">История логистики</h2>
+          <SupplyLogisticsPanel
+            supplyId={supply.id}
+            current={supply.logistics_status}
+            history={payload.logistics_history}
+            onUpdated={applyPayload}
+          />
+        </section>
+      ) : null}
+
+      {tab === "overview" ? (
+      <>
       <section className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Итоги</h2>
         <dl className="grid gap-2 sm:grid-cols-2">
@@ -698,6 +770,8 @@ export default function StaffSupplyDetailPage() {
             {deleting ? "Удаление..." : "Удалить черновик"}
           </button>
         </div>
+      ) : null}
+      </>
       ) : null}
 
       {addOpen ? (

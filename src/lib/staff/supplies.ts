@@ -1,28 +1,38 @@
 import { supabase } from "@/lib/supabase/client";
 import type {
   ProductLandedCostHistoryItem,
+  ProductSupplyComparisonRow,
   ProductSupplyCurrency,
+  ProductSupplyDocument,
   ProductSupplyExpense,
   ProductSupplyHeader,
   ProductSupplyItem,
+  ProductSupplyLinkedDocument,
   ProductSupplyListItem,
+  ProductSupplyLogisticsStatus,
   ProductSupplyPayload,
   ProductSupplyProductSearch,
+  ProductSupplyQtySource,
   ProductSupplyStatus,
+  ProductSupplyStatusHistoryItem,
   ProductSupplyTotals,
   ProductStatus,
 } from "@/types/database";
 
 export type {
   ProductLandedCostHistoryItem,
+  ProductSupplyComparisonRow,
   ProductSupplyCurrency,
+  ProductSupplyDocument,
   ProductSupplyExpense,
   ProductSupplyHeader,
   ProductSupplyItem,
   ProductSupplyListItem,
+  ProductSupplyLogisticsStatus,
   ProductSupplyPayload,
   ProductSupplyProductSearch,
   ProductSupplyStatus,
+  ProductSupplyStatusHistoryItem,
   ProductSupplyTotals,
 };
 
@@ -60,12 +70,14 @@ function mapListItem(row: Record<string, unknown>): ProductSupplyListItem {
     supplier_name: asNullableString(row.supplier_name),
     supply_date: asString(row.supply_date),
     status: asString(row.status, "draft") as ProductSupplyStatus,
+    logistics_status: asString(row.logistics_status, "draft") as ProductSupplyLogisticsStatus,
     gross_weight_kg: asNullableNumber(row.gross_weight_kg),
     total_expenses_kzt: asNullableNumber(row.total_expenses_kzt),
     expense_per_kg: asNullableNumber(row.expense_per_kg),
     total_landed_cost_kzt: asNullableNumber(row.total_landed_cost_kzt),
     items_count: asNumber(row.items_count, 0),
     created_at: asString(row.created_at),
+    updated_at: asString(row.updated_at, asString(row.created_at)),
     closed_at: asNullableString(row.closed_at),
   };
 }
@@ -83,6 +95,7 @@ function mapHeader(row: Record<string, unknown>): ProductSupplyHeader {
     gross_weight_kg: asNullableNumber(row.gross_weight_kg),
     notes: asNullableString(row.notes),
     status: asString(row.status, "draft") as ProductSupplyStatus,
+    logistics_status: asString(row.logistics_status, "draft") as ProductSupplyLogisticsStatus,
     source_kind: row.source_kind === "import" ? "import" : "manual",
     created_by: asString(row.created_by),
     created_at: asString(row.created_at),
@@ -90,6 +103,7 @@ function mapHeader(row: Record<string, unknown>): ProductSupplyHeader {
     closed_at: asNullableString(row.closed_at),
     closed_by: asNullableString(row.closed_by),
     is_preliminary: Boolean(row.is_preliminary),
+    inventory_receipt_id: asNullableString(row.inventory_receipt_id),
   };
 }
 
@@ -119,6 +133,23 @@ function mapItem(row: Record<string, unknown>): ProductSupplyItem {
     purchase_total_kzt: asNullableNumber(row.purchase_total_kzt),
     landed_cost_per_unit_kzt: asNullableNumber(row.landed_cost_per_unit_kzt),
     landed_cost_total_kzt: asNullableNumber(row.landed_cost_total_kzt),
+    qty_source: asString(row.qty_source, "manual") as ProductSupplyQtySource,
+    ordered_quantity: asNullableNumber(row.ordered_quantity),
+    ordered_unit: asNullableString(row.ordered_unit),
+    ordered_purchase_currency: asNullableString(row.ordered_purchase_currency) as ProductSupplyCurrency | null,
+    ordered_price_per_unit: asNullableNumber(row.ordered_price_per_unit),
+    ordered_amount: asNullableNumber(row.ordered_amount),
+    ordered_spec: asNullableString(row.ordered_spec),
+    ordered_name: asNullableString(row.ordered_name),
+    ordered_source_document_id: asNullableString(row.ordered_source_document_id),
+    shipped_quantity: asNullableNumber(row.shipped_quantity),
+    shipped_unit: asNullableString(row.shipped_unit),
+    shipped_purchase_currency: asNullableString(row.shipped_purchase_currency) as ProductSupplyCurrency | null,
+    shipped_price_per_unit: asNullableNumber(row.shipped_price_per_unit),
+    shipped_amount: asNullableNumber(row.shipped_amount),
+    shipped_spec: asNullableString(row.shipped_spec),
+    shipped_name: asNullableString(row.shipped_name),
+    shipped_source_document_id: asNullableString(row.shipped_source_document_id),
   };
 }
 
@@ -135,6 +166,14 @@ function mapExpense(row: Record<string, unknown>): ProductSupplyExpense {
     expense_date: asNullableString(row.expense_date),
     notes: asNullableString(row.notes),
     sort_order: asNumber(row.sort_order, 0),
+    linked_documents: ((row.linked_documents as Record<string, unknown>[] | null) ?? []).map(
+      (doc) => ({
+        id: asString(doc.id),
+        title: asString(doc.title),
+        document_type: asString(doc.document_type) as ProductSupplyLinkedDocument["document_type"],
+        original_filename: asString(doc.original_filename),
+      }),
+    ),
   };
 }
 
@@ -152,18 +191,93 @@ function mapTotals(row: Record<string, unknown>): ProductSupplyTotals {
   };
 }
 
-function mapPayload(data: unknown): ProductSupplyPayload {
+function mapDocument(row: Record<string, unknown>): ProductSupplyDocument {
+  return {
+    id: asString(row.id),
+    supply_id: asString(row.supply_id),
+    document_type: asString(row.document_type, "other") as ProductSupplyDocument["document_type"],
+    title: asString(row.title),
+    original_filename: asString(row.original_filename),
+    storage_path: asString(row.storage_path),
+    mime_type: asNullableString(row.mime_type),
+    file_size: asNullableNumber(row.file_size),
+    content_sha256: asNullableString(row.content_sha256),
+    uploaded_by: asString(row.uploaded_by),
+    uploaded_by_name: asNullableString(row.uploaded_by_name),
+    uploaded_at: asString(row.uploaded_at),
+    document_date: asNullableString(row.document_date),
+    notes: asNullableString(row.notes),
+    source_kind: row.source_kind === "import" ? "import" : "upload",
+    linked_expense_id: asNullableString(row.linked_expense_id),
+    linked_expense_name: asNullableString(row.linked_expense_name),
+    parser_status: asNullableString(row.parser_status) as ProductSupplyDocument["parser_status"],
+    imported_at: asNullableString(row.imported_at),
+    imported_by: asNullableString(row.imported_by),
+    already_imported: Boolean(row.already_imported),
+    parsed_row_count: asNumber(row.parsed_row_count, 0),
+  };
+}
+
+function mapHistory(row: Record<string, unknown>): ProductSupplyStatusHistoryItem {
+  return {
+    id: asString(row.id),
+    supply_id: asString(row.supply_id),
+    from_status: asNullableString(row.from_status) as ProductSupplyLogisticsStatus | null,
+    to_status: asString(row.to_status, "draft") as ProductSupplyLogisticsStatus,
+    changed_by: asString(row.changed_by),
+    changed_by_name: asNullableString(row.changed_by_name),
+    changed_at: asString(row.changed_at),
+    note: asNullableString(row.note),
+    location: asNullableString(row.location),
+  };
+}
+
+function mapComparison(row: Record<string, unknown>): ProductSupplyComparisonRow {
+  const flags = Array.isArray(row.flags)
+    ? (row.flags as unknown[]).map((flag) => String(flag))
+    : [];
+  return {
+    item_id: asString(row.item_id),
+    product_id: asString(row.product_id),
+    sku: asString(row.sku),
+    name: asString(row.name),
+    unit: asString(row.unit, "шт."),
+    ordered_quantity: asNullableNumber(row.ordered_quantity),
+    shipped_quantity: asNullableNumber(row.shipped_quantity),
+    quantity_diff: asNullableNumber(row.quantity_diff),
+    ordered_price_per_unit: asNullableNumber(row.ordered_price_per_unit),
+    shipped_price_per_unit: asNullableNumber(row.shipped_price_per_unit),
+    price_diff: asNullableNumber(row.price_diff),
+    ordered_source_document_id: asNullableString(row.ordered_source_document_id),
+    shipped_source_document_id: asNullableString(row.shipped_source_document_id),
+    qty_source: asString(row.qty_source, "manual") as ProductSupplyQtySource,
+    status: asString(row.status, "manual") as ProductSupplyComparisonRow["status"],
+    flags,
+  };
+}
+
+export function mapProductSupplyPayload(data: unknown): ProductSupplyPayload {
   const row = (data ?? {}) as Record<string, unknown>;
   const supply = (row.supply ?? {}) as Record<string, unknown>;
   const items = (row.items as Record<string, unknown>[] | null) ?? [];
   const expenses = (row.expenses as Record<string, unknown>[] | null) ?? [];
+  const documents = (row.documents as Record<string, unknown>[] | null) ?? [];
+  const history = (row.logistics_history as Record<string, unknown>[] | null) ?? [];
+  const comparison = (row.comparison as Record<string, unknown>[] | null) ?? [];
   const totals = (row.totals ?? {}) as Record<string, unknown>;
   return {
     supply: mapHeader(supply),
     items: items.map(mapItem),
     expenses: expenses.map(mapExpense),
+    documents: documents.map(mapDocument),
+    logistics_history: history.map(mapHistory),
+    comparison: comparison.map(mapComparison),
     totals: mapTotals(totals),
   };
+}
+
+function mapPayload(data: unknown): ProductSupplyPayload {
+  return mapProductSupplyPayload(data);
 }
 
 function throwRpc(error: { message?: string } | null, fallback: string): never {
@@ -172,11 +286,19 @@ function throwRpc(error: { message?: string } | null, fallback: string): never {
 
 export async function listProductSupplies(params: {
   status?: ProductSupplyStatus | "";
+  logisticsStatus?: ProductSupplyLogisticsStatus | "";
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  query?: string | null;
   limit?: number;
 } = {}): Promise<ProductSupplyListItem[]> {
   const { data, error } = await supabase.rpc("staff_list_product_supplies", {
     p_status: params.status || null,
     p_limit: params.limit ?? 50,
+    p_logistics_status: params.logisticsStatus || null,
+    p_date_from: params.dateFrom || null,
+    p_date_to: params.dateTo || null,
+    p_query: params.query?.trim() || null,
   });
   if (error) throwRpc(error, "Не удалось загрузить поставки");
   return ((data as Record<string, unknown>[] | null) ?? []).map(mapListItem);
@@ -261,7 +383,11 @@ export async function searchProductsForSupply(
     p_limit: limit,
   });
   if (error) throwRpc(error, "Не удалось найти товары");
-  return ((data as Record<string, unknown>[] | null) ?? []).map((row) => ({
+  return ((data as Record<string, unknown>[] | null) ?? []).map(mapProductSearch);
+}
+
+function mapProductSearch(row: Record<string, unknown>): ProductSupplyProductSearch {
+  return {
     id: asString(row.id),
     sku: asString(row.sku),
     name: asString(row.name),
@@ -269,7 +395,12 @@ export async function searchProductsForSupply(
     unit: asString(row.unit, "шт."),
     status: asString(row.status, "draft") as ProductStatus,
     weight_kg: asNullableNumber(row.weight_kg),
-  }));
+    dimensions: asNullableString(row.dimensions),
+    category_id: asNullableString(row.category_id),
+    category_name: asNullableString(row.category_name),
+    subcategory_id: asNullableString(row.subcategory_id),
+    subcategory_name: asNullableString(row.subcategory_name),
+  };
 }
 
 export async function createDraftProductForSupply(input: {
@@ -291,16 +422,7 @@ export async function createDraftProductForSupply(input: {
     p_weight_kg: input.weightKg ?? null,
   });
   if (error) throwRpc(error, "Не удалось создать товар");
-  const row = (data ?? {}) as Record<string, unknown>;
-  return {
-    id: asString(row.id),
-    sku: asString(row.sku),
-    name: asString(row.name),
-    original_sku: asNullableString(row.original_sku),
-    unit: asString(row.unit, "шт."),
-    status: asString(row.status, "draft") as ProductStatus,
-    weight_kg: asNullableNumber(row.weight_kg),
-  };
+  return mapProductSearch((data ?? {}) as Record<string, unknown>);
 }
 
 export async function addProductSupplyItem(input: {
@@ -421,6 +543,22 @@ export async function listProductLandedCosts(
     is_preliminary: Boolean(row.is_preliminary),
     closed_at: asNullableString(row.closed_at),
   }));
+}
+
+export async function setProductSupplyLogisticsStatus(input: {
+  supplyId: string;
+  toStatus: ProductSupplyLogisticsStatus;
+  note?: string | null;
+  location?: string | null;
+}): Promise<ProductSupplyPayload> {
+  const { data, error } = await supabase.rpc("staff_set_product_supply_logistics_status", {
+    p_supply_id: input.supplyId,
+    p_to_status: input.toStatus,
+    p_note: input.note?.trim() || null,
+    p_location: input.location?.trim() || null,
+  });
+  if (error) throwRpc(error, "Не удалось обновить логистический статус");
+  return mapPayload(data);
 }
 
 const kztFormatter = new Intl.NumberFormat("ru-RU", {

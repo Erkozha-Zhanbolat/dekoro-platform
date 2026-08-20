@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 
 const PRODUCT_BUCKET = "product-images";
 const ORG_BUCKET = "organization-assets";
+const SUPPLY_BUCKET = "supply-documents";
 
 type StorageBody = {
   action?: unknown;
@@ -22,9 +23,11 @@ type StorageBody = {
 function collectReferencedPaths(refs: Record<string, unknown>): {
   product: Set<string>;
   organization: Set<string>;
+  supply: Set<string>;
 } {
   const product = new Set<string>();
   const organization = new Set<string>();
+  const supply = new Set<string>();
 
   const productImages = Array.isArray(refs.product_images) ? refs.product_images : [];
   for (const item of productImages) {
@@ -62,7 +65,14 @@ function collectReferencedPaths(refs: Record<string, unknown>): {
     }
   }
 
-  return { product, organization };
+  const supplyDocs = Array.isArray(refs.supply_documents) ? refs.supply_documents : [];
+  for (const item of supplyDocs) {
+    const row = item as Record<string, unknown>;
+    const path = typeof row.path === "string" ? row.path.trim() : "";
+    if (path) supply.add(path.replace(/^supply-documents\//, ""));
+  }
+
+  return { product, organization, supply };
 }
 
 async function listAllPaths(
@@ -153,19 +163,23 @@ export async function POST(request: Request) {
     const referenced = collectReferencedPaths(refs);
     const service = createSupabaseServiceClient();
 
-    const [productFiles, orgFiles] = await Promise.all([
+    const [productFiles, orgFiles, supplyFiles] = await Promise.all([
       listAllPaths(service, PRODUCT_BUCKET),
       listAllPaths(service, ORG_BUCKET),
+      listAllPaths(service, SUPPLY_BUCKET),
     ]);
 
     const productOrphans = productFiles.filter((f) => !referenced.product.has(f.path));
     const orgOrphans = orgFiles.filter((f) => !referenced.organization.has(f.path));
+    const supplyOrphans = supplyFiles.filter((f) => !referenced.supply.has(f.path));
 
     const productBytes = productFiles.reduce((s, f) => s + f.size, 0);
     const orgBytes = orgFiles.reduce((s, f) => s + f.size, 0);
+    const supplyBytes = supplyFiles.reduce((s, f) => s + f.size, 0);
     const orphanBytes =
       productOrphans.reduce((s, f) => s + f.size, 0) +
-      orgOrphans.reduce((s, f) => s + f.size, 0);
+      orgOrphans.reduce((s, f) => s + f.size, 0) +
+      supplyOrphans.reduce((s, f) => s + f.size, 0);
 
     if (action === "scan") {
       return NextResponse.json({
@@ -180,16 +194,22 @@ export async function POST(request: Request) {
             bytes: orgBytes,
             orphans: orgOrphans.length,
           },
+          [SUPPLY_BUCKET]: {
+            files: supplyFiles.length,
+            bytes: supplyBytes,
+            orphans: supplyOrphans.length,
+          },
         },
         totals: {
-          files: productFiles.length + orgFiles.length,
-          bytes: productBytes + orgBytes,
-          orphan_files: productOrphans.length + orgOrphans.length,
+          files: productFiles.length + orgFiles.length + supplyFiles.length,
+          bytes: productBytes + orgBytes + supplyBytes,
+          orphan_files: productOrphans.length + orgOrphans.length + supplyOrphans.length,
           orphan_bytes: orphanBytes,
         },
         orphans: {
           [PRODUCT_BUCKET]: productOrphans.slice(0, 200),
           [ORG_BUCKET]: orgOrphans.slice(0, 200),
+          [SUPPLY_BUCKET]: supplyOrphans.slice(0, 200),
         },
       });
     }
@@ -198,9 +218,11 @@ export async function POST(request: Request) {
       const requested = Array.isArray(body.paths) ? body.paths : [];
       const allowedProduct = new Set(productOrphans.map((f) => f.path));
       const allowedOrg = new Set(orgOrphans.map((f) => f.path));
+      const allowedSupply = new Set(supplyOrphans.map((f) => f.path));
 
       const toDeleteProduct: string[] = [];
       const toDeleteOrg: string[] = [];
+      const toDeleteSupply: string[] = [];
 
       for (const raw of requested) {
         if (typeof raw !== "string") continue;
@@ -212,10 +234,15 @@ export async function POST(request: Request) {
         } else if (path.startsWith(`${ORG_BUCKET}/`)) {
           const inner = path.slice(ORG_BUCKET.length + 1);
           if (allowedOrg.has(inner)) toDeleteOrg.push(inner);
+        } else if (path.startsWith(`${SUPPLY_BUCKET}/`)) {
+          const inner = path.slice(SUPPLY_BUCKET.length + 1);
+          if (allowedSupply.has(inner)) toDeleteSupply.push(inner);
         } else if (allowedProduct.has(path)) {
           toDeleteProduct.push(path);
         } else if (allowedOrg.has(path)) {
           toDeleteOrg.push(path);
+        } else if (allowedSupply.has(path)) {
+          toDeleteSupply.push(path);
         }
       }
 
@@ -223,6 +250,7 @@ export async function POST(request: Request) {
       if (requested.length === 0) {
         toDeleteProduct.push(...allowedProduct);
         toDeleteOrg.push(...allowedOrg);
+        toDeleteSupply.push(...allowedSupply);
       }
 
       let deleted = 0;
@@ -248,11 +276,22 @@ export async function POST(request: Request) {
         }
         deleted += toDeleteOrg.length;
       }
+      if (toDeleteSupply.length > 0) {
+        const { error } = await service.storage.from(SUPPLY_BUCKET).remove(toDeleteSupply);
+        if (error) {
+          return NextResponse.json(
+            { error: error.message || "Не удалось удалить orphan supply-documents" },
+            { status: 400 },
+          );
+        }
+        deleted += toDeleteSupply.length;
+      }
 
       return NextResponse.json({
         deleted,
         product_paths: toDeleteProduct,
         organization_paths: toDeleteOrg,
+        supply_paths: toDeleteSupply,
       });
     }
 

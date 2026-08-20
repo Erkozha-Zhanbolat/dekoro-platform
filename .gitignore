@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Commercial / temporary supply import workbooks — never commit originals.
+# Parser regression uses only the synthetic sample_cn_supply.xlsx.
+*订单.xlsx
+*订单.xls
+ASLAN*.xlsx
+ASLAN*.xls
+~$*
+src/lib/staff/supplyImports/fixtures/*
+!src/lib/staff/supplyImports/fixtures/sample_cn_supply.xlsx

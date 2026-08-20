@@ -1692,6 +1692,130 @@ export const PRODUCT_SUPPLY_STATUS_LABELS: Record<ProductSupplyStatus, string> =
   closed: "Закрыта",
 };
 
+export const PRODUCT_SUPPLY_FINANCIAL_LABELS: Record<ProductSupplyStatus, string> = {
+  draft: "Предварительная",
+  closed: "Закрыта",
+};
+
+export type ProductSupplyLogisticsStatus =
+  | "draft"
+  | "ordered"
+  | "in_production"
+  | "ready_at_factory"
+  | "to_khorgos"
+  | "khorgos_queue"
+  | "khorgos_customs"
+  | "to_almaty"
+  | "arrived_almaty"
+  | "completed";
+
+export const PRODUCT_SUPPLY_LOGISTICS_STATUS_ORDER: readonly ProductSupplyLogisticsStatus[] = [
+  "draft",
+  "ordered",
+  "in_production",
+  "ready_at_factory",
+  "to_khorgos",
+  "khorgos_queue",
+  "khorgos_customs",
+  "to_almaty",
+  "arrived_almaty",
+  "completed",
+];
+
+export const PRODUCT_SUPPLY_LOGISTICS_LABELS: Record<ProductSupplyLogisticsStatus, string> = {
+  draft: "Черновик",
+  ordered: "Заказ отправлен заводу",
+  in_production: "В производстве",
+  ready_at_factory: "Готов на заводе",
+  to_khorgos: "В пути до Хоргоса",
+  khorgos_queue: "В очереди в Хоргосе",
+  khorgos_customs: "На оформлении в Хоргосе",
+  to_almaty: "В пути в Алматы",
+  arrived_almaty: "Прибыл в Алматы",
+  completed: "Завершено",
+};
+
+export type ProductSupplyDocumentType =
+  | "factory_order"
+  | "factory_shipment"
+  | "commercial_invoice"
+  | "packing_list"
+  | "china_export_declaration"
+  | "transit_declaration"
+  | "kazakhstan_customs_declaration"
+  | "cmr"
+  | "transport_document"
+  | "certificate"
+  | "broker_document"
+  | "expense_invoice"
+  | "payment_document"
+  | "other";
+
+export const PRODUCT_SUPPLY_DOCUMENT_TYPE_ORDER: readonly ProductSupplyDocumentType[] = [
+  "factory_order",
+  "factory_shipment",
+  "commercial_invoice",
+  "packing_list",
+  "china_export_declaration",
+  "transit_declaration",
+  "kazakhstan_customs_declaration",
+  "cmr",
+  "transport_document",
+  "certificate",
+  "broker_document",
+  "expense_invoice",
+  "payment_document",
+  "other",
+];
+
+export const PRODUCT_SUPPLY_DOCUMENT_TYPE_LABELS: Record<ProductSupplyDocumentType, string> = {
+  factory_order: "Заказ заводу",
+  factory_shipment: "Накладная завода",
+  commercial_invoice: "Commercial Invoice",
+  packing_list: "Packing List",
+  china_export_declaration: "Экспортная декларация Китая",
+  transit_declaration: "Транзитная декларация",
+  kazakhstan_customs_declaration: "ДТ Казахстан",
+  cmr: "CMR",
+  transport_document: "Транспортный документ",
+  certificate: "Сертификат",
+  broker_document: "Документ брокера",
+  expense_invoice: "Счёт по расходу",
+  payment_document: "Платёжный документ",
+  other: "Другое",
+};
+
+export const PRODUCT_SUPPLY_IMPORT_DOCUMENT_TYPES: readonly ProductSupplyDocumentType[] = [
+  "factory_order",
+  "factory_shipment",
+];
+
+export type ProductSupplyParserStatus =
+  | "uploaded"
+  | "preview"
+  | "committed"
+  | "error"
+  | "skipped";
+
+export type ProductSupplyQtySource = "manual" | "ordered" | "shipped";
+
+export type ProductSupplyComparisonStatus =
+  | "match"
+  | "under_shipped"
+  | "over_shipped"
+  | "new_in_shipment"
+  | "missing_in_shipment"
+  | "manual";
+
+export const PRODUCT_SUPPLY_COMPARISON_LABELS: Record<ProductSupplyComparisonStatus, string> = {
+  match: "Совпадает",
+  under_shipped: "Недопоставка",
+  over_shipped: "Перепоставка",
+  new_in_shipment: "Новый товар в отгрузке",
+  missing_in_shipment: "Нет в отгрузке",
+  manual: "Вручную",
+};
+
 export const PRODUCT_SUPPLY_CURRENCY_LABELS: Record<ProductSupplyCurrency, string> = {
   KZT: "KZT",
   CNY: "CNY",
@@ -1732,12 +1856,14 @@ export type ProductSupplyListItem = {
   supplier_name: string | null;
   supply_date: string;
   status: ProductSupplyStatus;
+  logistics_status: ProductSupplyLogisticsStatus;
   gross_weight_kg: number | null;
   total_expenses_kzt: number | null;
   expense_per_kg: number | null;
   total_landed_cost_kzt: number | null;
   items_count: number;
   created_at: string;
+  updated_at: string;
   closed_at: string | null;
 };
 
@@ -1753,6 +1879,7 @@ export type ProductSupplyHeader = {
   gross_weight_kg: number | null;
   notes: string | null;
   status: ProductSupplyStatus;
+  logistics_status: ProductSupplyLogisticsStatus;
   source_kind: "manual" | "import";
   created_by: string;
   created_at: string;
@@ -1760,6 +1887,7 @@ export type ProductSupplyHeader = {
   closed_at: string | null;
   closed_by: string | null;
   is_preliminary: boolean;
+  inventory_receipt_id: string | null;
 };
 
 export type ProductSupplyItem = {
@@ -1787,6 +1915,23 @@ export type ProductSupplyItem = {
   purchase_total_kzt: number | null;
   landed_cost_per_unit_kzt: number | null;
   landed_cost_total_kzt: number | null;
+  qty_source: ProductSupplyQtySource;
+  ordered_quantity: number | null;
+  ordered_unit: string | null;
+  ordered_purchase_currency: ProductSupplyCurrency | null;
+  ordered_price_per_unit: number | null;
+  ordered_amount: number | null;
+  ordered_spec: string | null;
+  ordered_name: string | null;
+  ordered_source_document_id: string | null;
+  shipped_quantity: number | null;
+  shipped_unit: string | null;
+  shipped_purchase_currency: ProductSupplyCurrency | null;
+  shipped_price_per_unit: number | null;
+  shipped_amount: number | null;
+  shipped_spec: string | null;
+  shipped_name: string | null;
+  shipped_source_document_id: string | null;
 };
 
 export type ProductSupplyExpense = {
@@ -1801,6 +1946,99 @@ export type ProductSupplyExpense = {
   expense_date: string | null;
   notes: string | null;
   sort_order: number;
+  linked_documents: ProductSupplyLinkedDocument[];
+};
+
+export type ProductSupplyLinkedDocument = {
+  id: string;
+  title: string;
+  document_type: ProductSupplyDocumentType;
+  original_filename: string;
+};
+
+export type SupplyDocumentRowMatchStatus =
+  | "auto_match"
+  | "needs_selection"
+  | "unmatched"
+  | "manual_match"
+  | "skipped";
+
+export const SUPPLY_DOCUMENT_ROW_MATCH_LABELS: Record<SupplyDocumentRowMatchStatus, string> = {
+  auto_match: "Сопоставлено автоматически",
+  needs_selection: "Требуется выбор товара",
+  unmatched: "Товар не найден",
+  manual_match: "Сопоставлено вручную",
+  skipped: "Пропущена",
+};
+
+export type SupplyDocumentProductCandidate = {
+  product_id: string;
+  sku: string;
+  name: string;
+  original_sku: string | null;
+  unit: string;
+  status: string;
+  dimensions: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  subcategory_id: string | null;
+  subcategory_name: string | null;
+};
+
+export type ProductSupplyDocument = {
+  id: string;
+  supply_id: string;
+  document_type: ProductSupplyDocumentType;
+  title: string;
+  original_filename: string;
+  storage_path: string;
+  mime_type: string | null;
+  file_size: number | null;
+  content_sha256: string | null;
+  uploaded_by: string;
+  uploaded_by_name: string | null;
+  uploaded_at: string;
+  document_date: string | null;
+  notes: string | null;
+  source_kind: "upload" | "import";
+  linked_expense_id: string | null;
+  linked_expense_name: string | null;
+  parser_status: ProductSupplyParserStatus | null;
+  imported_at: string | null;
+  imported_by: string | null;
+  already_imported: boolean;
+  parsed_row_count: number;
+};
+
+export type ProductSupplyStatusHistoryItem = {
+  id: string;
+  supply_id: string;
+  from_status: ProductSupplyLogisticsStatus | null;
+  to_status: ProductSupplyLogisticsStatus;
+  changed_by: string;
+  changed_by_name: string | null;
+  changed_at: string;
+  note: string | null;
+  location: string | null;
+};
+
+export type ProductSupplyComparisonRow = {
+  item_id: string;
+  product_id: string;
+  sku: string;
+  name: string;
+  unit: string;
+  ordered_quantity: number | null;
+  shipped_quantity: number | null;
+  quantity_diff: number | null;
+  ordered_price_per_unit: number | null;
+  shipped_price_per_unit: number | null;
+  price_diff: number | null;
+  ordered_source_document_id: string | null;
+  shipped_source_document_id: string | null;
+  qty_source: ProductSupplyQtySource;
+  status: ProductSupplyComparisonStatus;
+  flags: string[];
 };
 
 export type ProductSupplyTotals = {
@@ -1819,6 +2057,9 @@ export type ProductSupplyPayload = {
   supply: ProductSupplyHeader;
   items: ProductSupplyItem[];
   expenses: ProductSupplyExpense[];
+  documents: ProductSupplyDocument[];
+  logistics_history: ProductSupplyStatusHistoryItem[];
+  comparison: ProductSupplyComparisonRow[];
   totals: ProductSupplyTotals;
 };
 
@@ -1830,6 +2071,11 @@ export type ProductSupplyProductSearch = {
   unit: string;
   status: ProductStatus;
   weight_kg: number | null;
+  dimensions: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  subcategory_id: string | null;
+  subcategory_name: string | null;
 };
 
 export type ProductLandedCostHistoryItem = {
