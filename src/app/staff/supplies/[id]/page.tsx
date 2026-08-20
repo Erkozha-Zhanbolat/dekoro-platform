@@ -18,6 +18,7 @@ import {
   formatSupplyPct,
   formatSupplyRate,
   getProductSupply,
+  getSupplyFxRate,
   parseSupplyNumber,
   searchProductsForSupply,
   updateProductSupply,
@@ -40,7 +41,8 @@ import SupplyDualStatus from "@/components/staff/supply/SupplyDualStatus";
 import SupplyComparisonPanel from "@/components/staff/supply/SupplyComparisonPanel";
 import SupplyDocumentsPanel from "@/components/staff/supply/SupplyDocumentsPanel";
 import SupplyLogisticsPanel from "@/components/staff/supply/SupplyLogisticsPanel";
-
+import SupplyFxRatesPanel from "@/components/staff/supply/SupplyFxRatesPanel";
+import SupplyReceivingPanel from "@/components/staff/supply/SupplyReceivingPanel";
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
@@ -68,7 +70,6 @@ export default function StaffSupplyDetailPage() {
   const [supplierName, setSupplierName] = useState("");
   const [supplyDate, setSupplyDate] = useState("");
   const [currency, setCurrency] = useState<ProductSupplyCurrency>("CNY");
-  const [rate, setRate] = useState("");
   const [gross, setGross] = useState("");
   const [notes, setNotes] = useState("");
   const [headerBusy, setHeaderBusy] = useState(false);
@@ -100,7 +101,6 @@ export default function StaffSupplyDetailPage() {
     setSupplierName(s.supplier_name ?? "");
     setSupplyDate(s.supply_date);
     setCurrency(s.default_currency);
-    setRate(toInput(s.default_exchange_rate_to_kzt));
     setGross(toInput(s.gross_weight_kg));
     setNotes(s.notes ?? "");
     const drafts: Record<string, ItemDraft> = {};
@@ -172,7 +172,13 @@ export default function StaffSupplyDetailPage() {
         supplierName: supplierName.trim() || null,
         supplyDate,
         defaultCurrency: currency,
-        defaultExchangeRateToKzt: currency === "KZT" ? 1 : parseSupplyNumber(rate),
+        defaultExchangeRateToKzt:
+          currency === "KZT"
+            ? 1
+            : getSupplyFxRate(payload?.fx_rates ?? [], currency, {
+                currency: supply.default_currency,
+                rate: supply.default_exchange_rate_to_kzt,
+              }),
         grossWeightKg: parseSupplyNumber(gross),
         notes: notes.trim() || null,
         clearSupplier: supplierName.trim() === "",
@@ -209,7 +215,6 @@ export default function StaffSupplyDetailPage() {
         unitNetWeightKg: weight,
         purchasePricePerUnit: price,
         purchaseCurrency: draft.purchase_currency,
-        exchangeRateToKzt: draft.purchase_currency === "KZT" ? 1 : parseSupplyNumber(draft.exchange_rate_to_kzt),
         clearWeight: weight == null,
         clearPrice: price == null,
       });
@@ -301,6 +306,7 @@ export default function StaffSupplyDetailPage() {
             <SupplyDualStatus
               logisticsStatus={supply.logistics_status}
               financialStatus={supply.status}
+              receivingStatus={supply.receiving_status}
             />
           </div>
         </div>
@@ -321,6 +327,7 @@ export default function StaffSupplyDetailPage() {
         counts={{
           items: items.length,
           comparison: payload.comparison.length,
+          receiving: payload.receiving?.items.length,
           expenses: expenses.length,
           documents: payload.documents.length,
           history: payload.logistics_history.length,
@@ -385,18 +392,6 @@ export default function StaffSupplyDetailPage() {
               ))}
             </select>
           </label>
-          {currency !== "KZT" ? (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Курс к KZT</span>
-              <input
-                disabled={readOnly}
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                className={inputClass}
-                inputMode="decimal"
-              />
-            </label>
-          ) : null}
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
               Фактический брутто-вес, кг
@@ -437,6 +432,13 @@ export default function StaffSupplyDetailPage() {
           </button>
         ) : null}
       </section>
+
+      <SupplyFxRatesPanel
+        supply={supply}
+        fxRates={payload.fx_rates}
+        readOnly={readOnly}
+        onUpdated={applyPayload}
+      />
 
       <section className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Вес поставки</h2>
@@ -578,17 +580,21 @@ export default function StaffSupplyDetailPage() {
                             ))}
                           </select>
                           {draft.purchase_currency !== "KZT" ? (
-                            <input
-                              disabled={readOnly}
-                              value={draft.exchange_rate_to_kzt}
-                              onChange={(e) =>
-                                patchDraft(item.id, { exchange_rate_to_kzt: e.target.value })
-                              }
-                              onBlur={() => void persistItem(item.id)}
-                              className={inputClass}
-                              inputMode="decimal"
-                              placeholder="Курс"
-                            />
+                            <p className="text-[11px] text-neutral-500">
+                              {(() => {
+                                const supplyRate = getSupplyFxRate(
+                                  payload.fx_rates,
+                                  draft.purchase_currency,
+                                  {
+                                    currency: supply.default_currency,
+                                    rate: supply.default_exchange_rate_to_kzt,
+                                  },
+                                );
+                                return supplyRate == null
+                                  ? `Курс ${draft.purchase_currency} не задан`
+                                  : `курс поставки ${formatSupplyRate(supplyRate)}`;
+                              })()}
+                            </p>
                           ) : null}
                         </div>
                       </td>
@@ -633,6 +639,16 @@ export default function StaffSupplyDetailPage() {
             становятся основой расчёта себестоимости Stage 38.
           </p>
           <SupplyComparisonPanel rows={payload.comparison} />
+        </section>
+      ) : null}
+
+      {tab === "receiving" ? (
+        <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <SupplyReceivingPanel
+            supply={supply}
+            receiving={payload.receiving}
+            onUpdated={applyPayload}
+          />
         </section>
       ) : null}
 
@@ -682,7 +698,14 @@ export default function StaffSupplyDetailPage() {
                     </td>
                     <td className="px-3 py-2">{formatSupplyRate(row.amount)}</td>
                     <td className="px-3 py-2">{row.currency}</td>
-                    <td className="px-3 py-2">{formatSupplyRate(row.exchange_rate_to_kzt)}</td>
+                    <td className="px-3 py-2">
+                      {formatSupplyRate(row.exchange_rate_to_kzt)}
+                      {row.use_custom_exchange_rate ? (
+                        <span className="mt-0.5 block text-[11px] text-amber-700">свой курс</span>
+                      ) : row.currency !== "KZT" ? (
+                        <span className="mt-0.5 block text-[11px] text-neutral-400">курс поставки</span>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-2 font-medium">{formatSupplyMoney(row.amount_kzt)}</td>
                     <td className="px-3 py-2 text-xs text-neutral-600">
                       {row.linked_documents.length === 0
@@ -803,7 +826,12 @@ export default function StaffSupplyDetailPage() {
       {expenseOpen ? (
         <AddExpenseModal
           supplyId={supply.id}
-          defaultRate={supply.default_exchange_rate_to_kzt}
+          supplyRateFor={(code) =>
+            getSupplyFxRate(payload.fx_rates, code, {
+              currency: supply.default_currency,
+              rate: supply.default_exchange_rate_to_kzt,
+            })
+          }
           onClose={() => setExpenseOpen(false)}
           onAdded={(next) => {
             applyPayload(next);
@@ -1191,12 +1219,12 @@ function NewProductModal({
 
 function AddExpenseModal({
   supplyId,
-  defaultRate,
+  supplyRateFor,
   onClose,
   onAdded,
 }: {
   supplyId: string;
-  defaultRate: number | null;
+  supplyRateFor: (currency: ProductSupplyCurrency) => number | null;
   onClose: () => void;
   onAdded: (payload: ProductSupplyPayload) => void;
 }) {
@@ -1204,11 +1232,14 @@ function AddExpenseModal({
   const [name, setName] = useState(PRODUCT_SUPPLY_EXPENSE_PRESETS[0]?.name ?? "");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<ProductSupplyCurrency>("KZT");
-  const [rate, setRate] = useState(toInput(defaultRate));
+  const [useCustomRate, setUseCustomRate] = useState(false);
+  const [rate, setRate] = useState("");
   const [date, setDate] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const inheritedRate = supplyRateFor(currency);
 
   async function handleAdd() {
     if (busy) return;
@@ -1221,6 +1252,13 @@ function AddExpenseModal({
       setError("Укажите название статьи");
       return;
     }
+    if (currency !== "KZT" && useCustomRate) {
+      const custom = parseSupplyNumber(rate);
+      if (custom == null || custom <= 0) {
+        setError("Укажите свой курс к тенге");
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     try {
@@ -1229,7 +1267,13 @@ function AddExpenseModal({
         name: name.trim(),
         amount: value,
         currency,
-        exchangeRateToKzt: currency === "KZT" ? 1 : parseSupplyNumber(rate),
+        useCustomExchangeRate: currency !== "KZT" && useCustomRate,
+        exchangeRateToKzt:
+          currency === "KZT"
+            ? 1
+            : useCustomRate
+              ? parseSupplyNumber(rate)
+              : null,
         categoryKey: presetKey,
         expenseDate: date || null,
         notes: notes.trim() || null,
@@ -1284,7 +1328,32 @@ function AddExpenseModal({
           </select>
         </label>
         {currency !== "KZT" ? (
-          <NumberField label="Курс к KZT *" value={rate} onChange={setRate} />
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <p className="text-xs text-neutral-500">
+              По умолчанию: курс поставки{" "}
+              {inheritedRate == null ? (
+                <span className="text-amber-700">не задан</span>
+              ) : (
+                <span className="font-medium text-neutral-700">{formatSupplyRate(inheritedRate)}</span>
+              )}
+            </p>
+            <label className="flex items-center gap-2 text-sm text-neutral-700">
+              <input
+                type="checkbox"
+                checked={useCustomRate}
+                onChange={(e) => {
+                  setUseCustomRate(e.target.checked);
+                  if (e.target.checked && !rate) {
+                    setRate(toInput(inheritedRate));
+                  }
+                }}
+              />
+              Использовать свой курс
+            </label>
+            {useCustomRate ? (
+              <NumberField label="Свой курс к KZT *" value={rate} onChange={setRate} />
+            ) : null}
+          </div>
         ) : null}
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Дата</span>

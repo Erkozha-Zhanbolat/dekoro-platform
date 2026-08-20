@@ -5,6 +5,7 @@ export type SupplyTabId =
   | "overview"
   | "items"
   | "comparison"
+  | "receiving"
   | "expenses"
   | "documents"
   | "history";
@@ -13,6 +14,7 @@ const TABS: { id: SupplyTabId; label: string }[] = [
   { id: "overview", label: "Обзор" },
   { id: "items", label: "Товары" },
   { id: "comparison", label: "Заказ / Отгрузка" },
+  { id: "receiving", label: "Приёмка" },
   { id: "expenses", label: "Расходы" },
   { id: "documents", label: "Документы" },
   { id: "history", label: "История" },

@@ -3,8 +3,10 @@ import type {
   ProductLandedCostHistoryItem,
   ProductSupplyComparisonRow,
   ProductSupplyCurrency,
+  ProductSupplyDiscrepancyType,
   ProductSupplyDocument,
   ProductSupplyExpense,
+  ProductSupplyFxRate,
   ProductSupplyHeader,
   ProductSupplyItem,
   ProductSupplyLinkedDocument,
@@ -13,6 +15,9 @@ import type {
   ProductSupplyPayload,
   ProductSupplyProductSearch,
   ProductSupplyQtySource,
+  ProductSupplyReceiving,
+  ProductSupplyReceivingItem,
+  ProductSupplyReceivingStatus,
   ProductSupplyStatus,
   ProductSupplyStatusHistoryItem,
   ProductSupplyTotals,
@@ -23,14 +28,19 @@ export type {
   ProductLandedCostHistoryItem,
   ProductSupplyComparisonRow,
   ProductSupplyCurrency,
+  ProductSupplyDiscrepancyType,
   ProductSupplyDocument,
   ProductSupplyExpense,
+  ProductSupplyFxRate,
   ProductSupplyHeader,
   ProductSupplyItem,
   ProductSupplyListItem,
   ProductSupplyLogisticsStatus,
   ProductSupplyPayload,
   ProductSupplyProductSearch,
+  ProductSupplyReceiving,
+  ProductSupplyReceivingItem,
+  ProductSupplyReceivingStatus,
   ProductSupplyStatus,
   ProductSupplyStatusHistoryItem,
   ProductSupplyTotals,
@@ -96,6 +106,11 @@ function mapHeader(row: Record<string, unknown>): ProductSupplyHeader {
     notes: asNullableString(row.notes),
     status: asString(row.status, "draft") as ProductSupplyStatus,
     logistics_status: asString(row.logistics_status, "draft") as ProductSupplyLogisticsStatus,
+    receiving_status: asString(
+      row.receiving_status,
+      "not_started",
+    ) as ProductSupplyReceivingStatus,
+    active_receiving_id: asNullableString(row.active_receiving_id),
     source_kind: row.source_kind === "import" ? "import" : "manual",
     created_by: asString(row.created_by),
     created_at: asString(row.created_at),
@@ -133,6 +148,9 @@ function mapItem(row: Record<string, unknown>): ProductSupplyItem {
     purchase_total_kzt: asNullableNumber(row.purchase_total_kzt),
     landed_cost_per_unit_kzt: asNullableNumber(row.landed_cost_per_unit_kzt),
     landed_cost_total_kzt: asNullableNumber(row.landed_cost_total_kzt),
+    received_quantity: asNullableNumber(row.received_quantity),
+    damaged_quantity: asNullableNumber(row.damaged_quantity),
+    accepted_quantity: asNullableNumber(row.accepted_quantity),
     qty_source: asString(row.qty_source, "manual") as ProductSupplyQtySource,
     ordered_quantity: asNullableNumber(row.ordered_quantity),
     ordered_unit: asNullableString(row.ordered_unit),
@@ -162,6 +180,7 @@ function mapExpense(row: Record<string, unknown>): ProductSupplyExpense {
     amount: asNumber(row.amount, 0),
     currency: asString(row.currency, "KZT") as ProductSupplyCurrency,
     exchange_rate_to_kzt: asNullableNumber(row.exchange_rate_to_kzt),
+    use_custom_exchange_rate: Boolean(row.use_custom_exchange_rate),
     amount_kzt: asNullableNumber(row.amount_kzt),
     expense_date: asNullableString(row.expense_date),
     notes: asNullableString(row.notes),
@@ -174,6 +193,70 @@ function mapExpense(row: Record<string, unknown>): ProductSupplyExpense {
         original_filename: asString(doc.original_filename),
       }),
     ),
+  };
+}
+
+function mapFxRate(row: Record<string, unknown>): ProductSupplyFxRate {
+  return {
+    currency: asString(row.currency, "CNY") as ProductSupplyCurrency,
+    rate_to_kzt: asNumber(row.rate_to_kzt, 0),
+    effective_date: asNullableString(row.effective_date),
+    source_note: asNullableString(row.source_note),
+    updated_at: asString(row.updated_at),
+    updated_by: asNullableString(row.updated_by),
+  };
+}
+
+function mapReceivingItem(row: Record<string, unknown>): ProductSupplyReceivingItem {
+  return {
+    id: asString(row.id),
+    receiving_id: asString(row.receiving_id),
+    supply_item_id: asNullableString(row.supply_item_id),
+    product_id: asString(row.product_id),
+    sort_order: asNumber(row.sort_order, 0),
+    sku: asNullableString(row.sku),
+    name: asNullableString(row.name),
+    spec: asNullableString(row.spec),
+    ordered_quantity: asNullableNumber(row.ordered_quantity),
+    shipped_quantity: asNullableNumber(row.shipped_quantity),
+    expected_quantity: asNumber(row.expected_quantity, 0),
+    received_quantity: asNullableNumber(row.received_quantity),
+    damaged_quantity: asNumber(row.damaged_quantity, 0),
+    accepted_quantity: asNullableNumber(row.accepted_quantity),
+    difference_quantity: asNullableNumber(row.difference_quantity),
+    discrepancy_type: asNullableString(row.discrepancy_type) as ProductSupplyDiscrepancyType | null,
+    comment: asNullableString(row.comment),
+    is_unexpected: Boolean(row.is_unexpected),
+    line_status: row.line_status === "filled" ? "filled" : "pending",
+    stock_receipt_id: asNullableString(row.stock_receipt_id),
+  };
+}
+
+function mapReceiving(row: Record<string, unknown> | null): ProductSupplyReceiving | null {
+  if (!row || typeof row !== "object") return null;
+  const summary = (row.summary ?? {}) as Record<string, unknown>;
+  return {
+    id: asString(row.id),
+    supply_id: asString(row.supply_id),
+    status: row.status === "confirmed" ? "confirmed" : "draft",
+    warehouse_id: asNullableString(row.warehouse_id),
+    started_by: asString(row.started_by),
+    started_at: asString(row.started_at),
+    confirmed_by: asNullableString(row.confirmed_by),
+    confirmed_at: asNullableString(row.confirmed_at),
+    stock_receipt_batch_id: asNullableString(row.stock_receipt_batch_id),
+    notes: asNullableString(row.notes),
+    created_at: asString(row.created_at),
+    updated_at: asString(row.updated_at),
+    items: ((row.items as Record<string, unknown>[] | null) ?? []).map(mapReceivingItem),
+    summary: {
+      expected_sum: asNumber(summary.expected_sum, 0),
+      received_sum: asNumber(summary.received_sum, 0),
+      accepted_sum: asNumber(summary.accepted_sum, 0),
+      damaged_sum: asNumber(summary.damaged_sum, 0),
+      shortage_sum: asNumber(summary.shortage_sum, 0),
+      overage_sum: asNumber(summary.overage_sum, 0),
+    },
   };
 }
 
@@ -264,15 +347,29 @@ export function mapProductSupplyPayload(data: unknown): ProductSupplyPayload {
   const documents = (row.documents as Record<string, unknown>[] | null) ?? [];
   const history = (row.logistics_history as Record<string, unknown>[] | null) ?? [];
   const comparison = (row.comparison as Record<string, unknown>[] | null) ?? [];
+  const fxRates = (row.fx_rates as Record<string, unknown>[] | null) ?? [];
   const totals = (row.totals ?? {}) as Record<string, unknown>;
+  const fxApply = row.fx_apply as Record<string, unknown> | null | undefined;
   return {
     supply: mapHeader(supply),
     items: items.map(mapItem),
     expenses: expenses.map(mapExpense),
+    fx_rates: fxRates.map(mapFxRate),
+    receiving: mapReceiving(
+      row.receiving && typeof row.receiving === "object"
+        ? (row.receiving as Record<string, unknown>)
+        : null,
+    ),
     documents: documents.map(mapDocument),
     logistics_history: history.map(mapHistory),
     comparison: comparison.map(mapComparison),
     totals: mapTotals(totals),
+    fx_apply: fxApply
+      ? {
+          items: asNumber(fxApply.items, 0),
+          expenses: asNumber(fxApply.expenses, 0),
+        }
+      : null,
   };
 }
 
@@ -487,6 +584,7 @@ export async function addProductSupplyExpense(input: {
   amount: number;
   currency?: ProductSupplyCurrency;
   exchangeRateToKzt?: number | null;
+  useCustomExchangeRate?: boolean;
   categoryKey?: string;
   expenseDate?: string | null;
   notes?: string | null;
@@ -500,10 +598,128 @@ export async function addProductSupplyExpense(input: {
     p_category_key: input.categoryKey ?? "custom",
     p_expense_date: input.expenseDate || null,
     p_notes: input.notes?.trim() || null,
+    p_use_custom_exchange_rate: input.useCustomExchangeRate ?? false,
   });
   if (error) throwRpc(error, "Не удалось добавить расход");
   return mapPayload(data);
 }
+
+export async function setProductSupplyFxRates(
+  supplyId: string,
+  rates: Array<{
+    currency: "CNY" | "USD";
+    rateToKzt: number;
+    effectiveDate?: string | null;
+    sourceNote?: string | null;
+  }>,
+): Promise<ProductSupplyPayload> {
+  const { data, error } = await supabase.rpc("staff_set_product_supply_fx_rates", {
+    p_supply_id: supplyId,
+    p_rates: rates.map((rate) => ({
+      currency: rate.currency,
+      rate_to_kzt: rate.rateToKzt,
+      effective_date: rate.effectiveDate || null,
+      source_note: rate.sourceNote?.trim() || null,
+    })),
+  });
+  if (error) throwRpc(error, "Не удалось сохранить курсы валют");
+  return mapPayload(data);
+}
+
+export async function startProductSupplyReceiving(
+  supplyId: string,
+): Promise<ProductSupplyPayload> {
+  const { data, error } = await supabase.rpc("staff_start_product_supply_receiving", {
+    p_supply_id: supplyId,
+  });
+  if (error) throwRpc(error, "Не удалось начать приёмку");
+  return mapPayload(data);
+}
+
+export async function fillProductSupplyReceivingExpected(
+  supplyId: string,
+): Promise<ProductSupplyPayload> {
+  const { data, error } = await supabase.rpc("staff_fill_product_supply_receiving_expected", {
+    p_supply_id: supplyId,
+  });
+  if (error) throwRpc(error, "Не удалось заполнить приёмку по накладной");
+  return mapPayload(data);
+}
+
+export async function saveProductSupplyReceiving(
+  supplyId: string,
+  items: Array<{
+    id: string;
+    receivedQuantity: number | null;
+    damagedQuantity?: number;
+    discrepancyType?: ProductSupplyDiscrepancyType | null;
+    comment?: string | null;
+  }>,
+): Promise<ProductSupplyPayload> {
+  const { data, error } = await supabase.rpc("staff_save_product_supply_receiving", {
+    p_supply_id: supplyId,
+    p_items: items.map((item) => ({
+      id: item.id,
+      received_quantity: item.receivedQuantity,
+      damaged_quantity: item.damagedQuantity ?? 0,
+      discrepancy_type: item.discrepancyType ?? null,
+      comment: item.comment?.trim() || null,
+    })),
+  });
+  if (error) throwRpc(error, "Не удалось сохранить приёмку");
+  return mapPayload(data);
+}
+
+export async function addUnexpectedProductSupplyReceivingItem(input: {
+  supplyId: string;
+  productId: string;
+  receivedQuantity: number;
+  damagedQuantity?: number;
+  comment?: string | null;
+}): Promise<ProductSupplyPayload> {
+  const { data, error } = await supabase.rpc(
+    "staff_add_unexpected_product_supply_receiving_item",
+    {
+      p_supply_id: input.supplyId,
+      p_product_id: input.productId,
+      p_received_quantity: input.receivedQuantity,
+      p_damaged_quantity: input.damagedQuantity ?? 0,
+      p_comment: input.comment?.trim() || null,
+    },
+  );
+  if (error) throwRpc(error, "Не удалось добавить неожиданный товар");
+  return mapPayload(data);
+}
+
+export async function confirmProductSupplyReceiving(
+  supplyId: string,
+): Promise<ProductSupplyPayload> {
+  const { data, error } = await supabase.rpc("staff_confirm_product_supply_receiving", {
+    p_supply_id: supplyId,
+  });
+  if (error) throwRpc(error, "Не удалось подтвердить приёмку");
+  return mapPayload(data);
+}
+
+export function getSupplyFxRate(
+  fxRates: ProductSupplyFxRate[],
+  currency: ProductSupplyCurrency,
+  fallbackDefault: { currency: ProductSupplyCurrency; rate: number | null } | null = null,
+): number | null {
+  if (currency === "KZT") return 1;
+  const found = fxRates.find((row) => row.currency === currency);
+  if (found) return found.rate_to_kzt;
+  if (fallbackDefault && fallbackDefault.currency === currency) {
+    return fallbackDefault.rate;
+  }
+  return null;
+}
+
+export {
+  supplyAcceptedQuantity,
+  supplyAmountKzt,
+  supplyReceivingDifference,
+} from "./supplyMath";
 
 export async function deleteProductSupplyExpense(
   expenseId: string,

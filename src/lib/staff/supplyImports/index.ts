@@ -13,6 +13,7 @@ export {
 export { isExcelFileName, safeExcelFileName } from "./normalize";
 export { assertExcelFileMeta, readWorkbookFromFile, readWorkbookMatrix } from "./workbook";
 export { runSupplyImportSelfCheck } from "./selfCheck";
+export { runSupplyStage40SelfCheck } from "./stage40SelfCheck";
 
 export function parseSupplyExcelBuffer(
   buffer: ArrayBuffer,

@@ -1697,6 +1697,50 @@ export const PRODUCT_SUPPLY_FINANCIAL_LABELS: Record<ProductSupplyStatus, string
   closed: "Закрыта",
 };
 
+/** Stage 40 — factual Almaty receiving (independent of logistics / financial). */
+export type ProductSupplyReceivingStatus = "not_started" | "in_progress" | "completed";
+
+export const PRODUCT_SUPPLY_RECEIVING_STATUS_LABELS: Record<
+  ProductSupplyReceivingStatus,
+  string
+> = {
+  not_started: "Не начата",
+  in_progress: "В процессе",
+  completed: "Завершена",
+};
+
+export type ProductSupplyDiscrepancyType =
+  | "shortage"
+  | "overage"
+  | "damaged"
+  | "wrong_product"
+  | "pallet_mismatch"
+  | "unexpected"
+  | "other";
+
+export const PRODUCT_SUPPLY_DISCREPANCY_LABELS: Record<
+  ProductSupplyDiscrepancyType,
+  string
+> = {
+  shortage: "Недостача",
+  overage: "Излишек",
+  damaged: "Повреждение",
+  wrong_product: "Пересорт / другой товар",
+  pallet_mismatch: "Неверное кол-во в паллете",
+  unexpected: "Неожиданный товар",
+  other: "Другое",
+};
+
+export const PRODUCT_SUPPLY_DISCREPANCY_TYPES: readonly ProductSupplyDiscrepancyType[] = [
+  "shortage",
+  "overage",
+  "damaged",
+  "wrong_product",
+  "pallet_mismatch",
+  "unexpected",
+  "other",
+];
+
 export type ProductSupplyLogisticsStatus =
   | "draft"
   | "ordered"
@@ -1880,6 +1924,8 @@ export type ProductSupplyHeader = {
   notes: string | null;
   status: ProductSupplyStatus;
   logistics_status: ProductSupplyLogisticsStatus;
+  receiving_status: ProductSupplyReceivingStatus;
+  active_receiving_id: string | null;
   source_kind: "manual" | "import";
   created_by: string;
   created_at: string;
@@ -1888,6 +1934,64 @@ export type ProductSupplyHeader = {
   closed_by: string | null;
   is_preliminary: boolean;
   inventory_receipt_id: string | null;
+};
+
+export type ProductSupplyFxRate = {
+  currency: ProductSupplyCurrency;
+  rate_to_kzt: number;
+  effective_date: string | null;
+  source_note: string | null;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+export type ProductSupplyReceivingItem = {
+  id: string;
+  receiving_id: string;
+  supply_item_id: string | null;
+  product_id: string;
+  sort_order: number;
+  sku: string | null;
+  name: string | null;
+  spec: string | null;
+  ordered_quantity: number | null;
+  shipped_quantity: number | null;
+  expected_quantity: number;
+  received_quantity: number | null;
+  damaged_quantity: number;
+  accepted_quantity: number | null;
+  difference_quantity: number | null;
+  discrepancy_type: ProductSupplyDiscrepancyType | null;
+  comment: string | null;
+  is_unexpected: boolean;
+  line_status: "pending" | "filled";
+  stock_receipt_id: string | null;
+};
+
+export type ProductSupplyReceivingSummary = {
+  expected_sum: number;
+  received_sum: number;
+  accepted_sum: number;
+  damaged_sum: number;
+  shortage_sum: number;
+  overage_sum: number;
+};
+
+export type ProductSupplyReceiving = {
+  id: string;
+  supply_id: string;
+  status: "draft" | "confirmed";
+  warehouse_id: string | null;
+  started_by: string;
+  started_at: string;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  stock_receipt_batch_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  items: ProductSupplyReceivingItem[];
+  summary: ProductSupplyReceivingSummary;
 };
 
 export type ProductSupplyItem = {
@@ -1915,6 +2019,9 @@ export type ProductSupplyItem = {
   purchase_total_kzt: number | null;
   landed_cost_per_unit_kzt: number | null;
   landed_cost_total_kzt: number | null;
+  received_quantity: number | null;
+  damaged_quantity: number | null;
+  accepted_quantity: number | null;
   qty_source: ProductSupplyQtySource;
   ordered_quantity: number | null;
   ordered_unit: string | null;
@@ -1942,6 +2049,7 @@ export type ProductSupplyExpense = {
   amount: number;
   currency: ProductSupplyCurrency;
   exchange_rate_to_kzt: number | null;
+  use_custom_exchange_rate: boolean;
   amount_kzt: number | null;
   expense_date: string | null;
   notes: string | null;
@@ -2057,10 +2165,13 @@ export type ProductSupplyPayload = {
   supply: ProductSupplyHeader;
   items: ProductSupplyItem[];
   expenses: ProductSupplyExpense[];
+  fx_rates: ProductSupplyFxRate[];
+  receiving: ProductSupplyReceiving | null;
   documents: ProductSupplyDocument[];
   logistics_history: ProductSupplyStatusHistoryItem[];
   comparison: ProductSupplyComparisonRow[];
   totals: ProductSupplyTotals;
+  fx_apply?: { items: number; expenses: number } | null;
 };
 
 export type ProductSupplyProductSearch = {

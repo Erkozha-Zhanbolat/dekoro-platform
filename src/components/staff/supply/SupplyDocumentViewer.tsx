@@ -17,7 +17,14 @@ import {
   type SupplyDocumentDetail,
   type SupplyDocumentParsedRow,
 } from "@/lib/staff/supplyDocuments";
-import { searchProductsForSupply } from "@/lib/staff/supplies";
+import {
+  formatSupplyMoney,
+  formatSupplyRate,
+  getProductSupply,
+  getSupplyFxRate,
+  searchProductsForSupply,
+} from "@/lib/staff/supplies";
+import type { ProductSupplyFxRate, ProductSupplyHeader } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -59,6 +66,11 @@ export default function SupplyDocumentViewer({
   documentId: string;
 }) {
   const [detail, setDetail] = useState<SupplyDocumentDetail | null>(null);
+  const [fxRates, setFxRates] = useState<ProductSupplyFxRate[]>([]);
+  const [supplyHeader, setSupplyHeader] = useState<Pick<
+    ProductSupplyHeader,
+    "default_currency" | "default_exchange_rate_to_kzt"
+  > | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,14 +88,19 @@ export default function SupplyDocumentViewer({
 
   useEffect(() => {
     let ignore = false;
-    getSupplyDocumentDetail(documentId)
-      .then((next) => {
+    Promise.all([getSupplyDocumentDetail(documentId), getProductSupply(supplyId)])
+      .then(([next, supplyPayload]) => {
         if (ignore) return;
         if (next.supply_id !== supplyId) {
           setLoadError("Документ не принадлежит этой поставке");
           return;
         }
         setDetail(next);
+        setFxRates(supplyPayload.fx_rates);
+        setSupplyHeader({
+          default_currency: supplyPayload.supply.default_currency,
+          default_exchange_rate_to_kzt: supplyPayload.supply.default_exchange_rate_to_kzt,
+        });
         setLoadError(null);
       })
       .catch((err: unknown) => {
@@ -304,6 +321,16 @@ export default function SupplyDocumentViewer({
                   <DocumentRow
                     key={row.id}
                     row={row}
+                    supplyCnyRate={getSupplyFxRate(
+                      fxRates,
+                      "CNY",
+                      supplyHeader
+                        ? {
+                            currency: supplyHeader.default_currency,
+                            rate: supplyHeader.default_exchange_rate_to_kzt,
+                          }
+                        : null,
+                    )}
                     editable={editable}
                     busy={busy}
                     picking={pickRowId === row.id}
@@ -368,6 +395,7 @@ function asText(value: unknown): string | null {
 
 function DocumentRow({
   row,
+  supplyCnyRate,
   editable,
   busy,
   picking,
@@ -383,6 +411,7 @@ function DocumentRow({
   onError,
 }: {
   row: SupplyDocumentParsedRow;
+  supplyCnyRate: number | null;
   editable: boolean;
   busy: boolean;
   picking: boolean;
@@ -469,8 +498,15 @@ function DocumentRow({
             }}
           />
         ) : (
-          (row.price ?? "—")
+          (row.price == null ? "—" : `${row.price} ¥`)
         )}
+        {row.price != null ? (
+          <p className="text-[11px] text-neutral-400">
+            {supplyCnyRate == null
+              ? "Курс CNY не задан"
+              : `≈ ${formatSupplyMoney(row.price * supplyCnyRate)} по курсу ${formatSupplyRate(supplyCnyRate)}`}
+          </p>
+        ) : null}
         {row.source_price != null && row.source_price !== row.price ? (
           <p className="text-[11px] text-neutral-400">в файле: {row.source_price}</p>
         ) : null}

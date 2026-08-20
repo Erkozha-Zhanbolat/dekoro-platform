@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSupplyExcelBuffer } from "./index";
 import { runSupplyImportSelfCheck } from "./selfCheck";
+import { runSupplyStage40SelfCheck } from "./stage40SelfCheck";
 import { runSupplyStorageNameSelfCheck } from "../supplyDocumentStorage";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,13 @@ function main() {
     process.exit(1);
   }
   console.log("self-check: ok");
+
+  const stage40 = runSupplyStage40SelfCheck();
+  if (stage40.length > 0) {
+    console.error("stage40 self-check failed:", stage40.join(", "));
+    process.exit(1);
+  }
+  console.log("stage40 self-check: ok");
 
   const storageCheck = runSupplyStorageNameSelfCheck();
   if (storageCheck.length > 0) {
