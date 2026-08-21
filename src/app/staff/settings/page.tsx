@@ -405,6 +405,10 @@ export default function StaffOrganizationSettingsPage() {
 
         <section className="rounded-lg border border-neutral-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-neutral-800">НДС</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            При режиме «С НДС» налог выделяется из суммы заказа:
+            НДС = сумма × ставка / (100 + ставка). Итого к оплате не увеличивается.
+          </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Field label="Режим по умолчанию">
               <select
@@ -437,7 +441,7 @@ export default function StaffOrganizationSettingsPage() {
                   )
                 }
                 disabled={!isAdmin}
-                placeholder="например 12"
+                placeholder="например 16"
               />
             </Field>
           </div>

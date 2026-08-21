@@ -3,6 +3,7 @@ import type {
   OrderDocumentMetadataItem,
   OrderDocumentPdfSource,
 } from "@/types/database";
+import { extractVatFromInclusive } from "@/lib/vat";
 import type { ResolvedSupplierImages } from "../types";
 
 const EMPTY_IMAGES: ResolvedSupplierImages = {
@@ -100,27 +101,28 @@ function totalsFromItems(
   vatRate = 16,
 ) {
   const subtotal = items.reduce((sum, item) => sum + item.line_total, 0);
-  const vatAmount =
-    taxMode === "with_vat" ? Math.round(subtotal * vatRate) / 100 : 0;
-  const finalTotal = taxMode === "with_vat" ? subtotal + vatAmount : subtotal;
+  const breakdown = extractVatFromInclusive(
+    subtotal,
+    taxMode === "with_vat" ? vatRate : 0,
+  );
   return {
     subtotal,
     items_subtotal: subtotal,
     discount: 0,
     order_total: subtotal,
-    amount_without_vat: subtotal,
+    amount_without_vat: breakdown.amountWithoutVat,
     vat_rate: taxMode === "with_vat" ? vatRate : 0,
-    vat_amount: vatAmount,
-    final_total: finalTotal,
-    total: finalTotal,
+    vat_amount: breakdown.vatAmount,
+    final_total: breakdown.finalTotal,
+    total: breakdown.finalTotal,
     items_count: items.length,
     item_count: items.length,
     total_quantity: items.reduce((sum, item) => sum + item.quantity, 0),
     currency: "KZT",
     tax_mode: taxMode,
     tax_label: taxMode === "with_vat" ? "С учетом НДС" : "Без НДС",
-    formula: "fixture",
-    prices_include_vat: false,
+    formula: "fixture: extractVatFromInclusive",
+    prices_include_vat: taxMode === "with_vat",
     amount_in_words: null,
   };
 }

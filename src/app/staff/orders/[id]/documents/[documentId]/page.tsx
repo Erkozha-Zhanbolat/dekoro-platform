@@ -422,7 +422,7 @@ export default function StaffDocumentViewPage() {
         </table>
         <div className="border-t border-neutral-200 px-4 py-3 text-right text-sm">
           <p className="mb-2 text-left text-xs text-neutral-400">
-            Цены заказа — без НДС. При режиме «С НДС» налог начисляется сверху.
+            При режиме «С НДС» налог выделяется из суммы заказа (не начисляется сверху).
           </p>
           {taxMode === "without_vat" ? (
             <p className="mt-1 text-lg font-semibold text-neutral-800">
@@ -431,7 +431,7 @@ export default function StaffDocumentViewPage() {
           ) : (
             <>
               <p className="text-neutral-500">
-                Стоимость товаров:{" "}
+                Сумма без НДС:{" "}
                 {formatPrice(amountWithoutVat ?? Number(totals.subtotal ?? 0))}
               </p>
               <p className="text-neutral-500">

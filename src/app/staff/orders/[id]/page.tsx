@@ -33,6 +33,7 @@ import {
 import type { StaffOrderDocumentListItem } from "@/lib/staff/documents";
 import { getOrganizationSettings } from "@/lib/staff/organization";
 import { formatPrice } from "@/lib/formatPrice";
+import { extractVatFromInclusive } from "@/lib/vat";
 import {
   canAccessOrderPayments,
   canAccessWarehouseOps,
@@ -1064,22 +1065,20 @@ export default function StaffOrderDetailPage() {
             </h2>
             <p className="mt-1 text-sm text-neutral-500">
               {taxModalDocType === "invoice"
-                ? "Шаблон счёта выбирается автоматически по типу покупателя. Цены заказа без НДС — при «С НДС» налог начисляется сверху."
-                : "Цены заказа без НДС — при «С НДС» налог начисляется сверху."}
+                ? "Шаблон счёта выбирается автоматически по типу покупателя. Сумма заказа уже включает НДС — при «С НДС» налог выделяется из итога (не начисляется сверху)."
+                : "Сумма заказа уже включает НДС — при «С НДС» налог выделяется из итога (не начисляется сверху)."}
             </p>
 
             {(() => {
               const orderSubtotal = Number(order.total);
               const vatRate = orgVatRate;
-              // Match SQL: round(subtotal * rate / 100, 2)
-              const vatAmountRounded =
+              // Match SQL 040+: round(total * rate / (100 + rate), 2)
+              const vatBreakdown =
                 taxModeDraft === "with_vat" && vatRate != null
-                  ? Math.round(((orderSubtotal * vatRate) / 100) * 100) / 100
-                  : 0;
-              const payTotal =
-                taxModeDraft === "with_vat"
-                  ? orderSubtotal + vatAmountRounded
-                  : orderSubtotal;
+                  ? extractVatFromInclusive(orderSubtotal, vatRate)
+                  : extractVatFromInclusive(orderSubtotal, 0);
+              const vatAmountRounded = vatBreakdown.vatAmount;
+              const payTotal = vatBreakdown.finalTotal;
               const withVatDisabled = vatRate == null;
 
               return (
@@ -1148,6 +1147,12 @@ export default function StaffOrderDetailPage() {
                         </span>
                       ) : taxModeDraft === "with_vat" ? (
                         <span className="space-y-0.5 pl-7 text-neutral-600">
+                          <span className="block">
+                            Без НДС:{" "}
+                            <span className="font-medium text-neutral-800">
+                              {formatPrice(vatBreakdown.amountWithoutVat)}
+                            </span>
+                          </span>
                           <span className="block">
                             НДС:{" "}
                             <span className="font-medium text-neutral-800">
