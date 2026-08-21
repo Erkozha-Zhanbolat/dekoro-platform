@@ -31,13 +31,6 @@ import {
   type StaffStockReceipt,
 } from "@/lib/staff/productInventory";
 import {
-  deleteProductGroupPrice,
-  getProductGroupPrices,
-  upsertProductGroupPrice,
-} from "@/lib/staff/pricing";
-import type { ProductGroupPriceRow } from "@/types/database";
-import { formatPrice } from "@/lib/formatPrice";
-import {
   INVENTORY_ADJUSTMENT_REASON_PRESETS,
   STAFF_PRODUCT_STATUS_LABELS,
   canManageProducts,
@@ -76,7 +69,6 @@ export default function StaffProductDetailPage() {
   const canManage = canManageProducts(profile?.role);
   const canReceipt = canRecordStockReceipt(profile?.role);
   const canViewMovements = canViewInventoryMovementHistory(profile?.role);
-  const canEditPricing = profile?.role === "admin";
   const canSeeLandedCost = canAccessProductSupplies(profile?.role);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -128,13 +120,6 @@ export default function StaffProductDetailPage() {
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [receiptInfo, setReceiptInfo] = useState<string | null>(null);
-
-  const [groupPrices, setGroupPrices] = useState<ProductGroupPriceRow[]>([]);
-  const [groupPriceDrafts, setGroupPriceDrafts] = useState<Record<string, string>>({});
-  const [groupPricesError, setGroupPricesError] = useState<string | null>(null);
-  const [groupPriceRowError, setGroupPriceRowError] = useState<Record<string, string>>({});
-  const [savingGroupPriceId, setSavingGroupPriceId] = useState<string | null>(null);
-  const [batchSavingGroupPrices, setBatchSavingGroupPrices] = useState(false);
 
   useEffect(() => {
     if (!profileLoading && profile && !canRead) {
@@ -199,148 +184,6 @@ export default function StaffProductDetailPage() {
       ignore = true;
     };
   }, [productId, canRead, canViewMovements, loadedKey]);
-
-  function syncGroupPriceDrafts(rows: ProductGroupPriceRow[]) {
-    const next: Record<string, string> = {};
-    for (const row of rows) {
-      if (row.has_explicit_price && row.price != null) {
-        next[row.price_group_id] = String(row.price);
-      }
-    }
-    setGroupPriceDrafts(next);
-  }
-
-  async function refreshGroupPrices() {
-    if (!productId) return;
-    const rows = await getProductGroupPrices(productId);
-    setGroupPrices(rows);
-    syncGroupPriceDrafts(rows);
-    setGroupPricesError(null);
-  }
-
-  useEffect(() => {
-    if (!productId || !canRead) return;
-
-    let ignore = false;
-
-    getProductGroupPrices(productId)
-      .then((rows) => {
-        if (ignore) return;
-        setGroupPrices(rows);
-        syncGroupPriceDrafts(rows);
-        setGroupPricesError(null);
-      })
-      .catch((error: unknown) => {
-        if (ignore) return;
-        setGroupPricesError(
-          error instanceof Error ? error.message : "Не удалось загрузить цены групп",
-        );
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, [productId, canRead]);
-
-  const displayedBasePrice = parseOptionalNumber(basePrice);
-
-  async function handleSaveGroupPrice(priceGroupId: string) {
-    if (!canManage || !product || savingGroupPriceId || batchSavingGroupPrices) return;
-
-    const price = parseOptionalNumber(groupPriceDrafts[priceGroupId] ?? "");
-    if (price == null || price < 0) {
-      setGroupPriceRowError((prev) => ({
-        ...prev,
-        [priceGroupId]: "Укажите корректную цену",
-      }));
-      return;
-    }
-
-    setSavingGroupPriceId(priceGroupId);
-    setGroupPriceRowError((prev) => {
-      const next = { ...prev };
-      delete next[priceGroupId];
-      return next;
-    });
-
-    try {
-      await upsertProductGroupPrice({
-        productId: product.id,
-        priceGroupId,
-        price,
-      });
-      await refreshGroupPrices();
-    } catch (error: unknown) {
-      setGroupPriceRowError((prev) => ({
-        ...prev,
-        [priceGroupId]: error instanceof Error ? error.message : "Не удалось сохранить",
-      }));
-    } finally {
-      setSavingGroupPriceId(null);
-    }
-  }
-
-  async function handleClearGroupPrice(priceGroupId: string) {
-    if (!canManage || !product || savingGroupPriceId || batchSavingGroupPrices) return;
-
-    setSavingGroupPriceId(priceGroupId);
-    setGroupPriceRowError((prev) => {
-      const next = { ...prev };
-      delete next[priceGroupId];
-      return next;
-    });
-
-    try {
-      await deleteProductGroupPrice({
-        productId: product.id,
-        priceGroupId,
-      });
-      await refreshGroupPrices();
-    } catch (error: unknown) {
-      setGroupPriceRowError((prev) => ({
-        ...prev,
-        [priceGroupId]: error instanceof Error ? error.message : "Не удалось удалить",
-      }));
-    } finally {
-      setSavingGroupPriceId(null);
-    }
-  }
-
-  async function handleSaveAllGroupPrices() {
-    if (!canManage || !product || savingGroupPriceId || batchSavingGroupPrices) return;
-
-    const dirtyRows = groupPrices.filter((row) => {
-      const draft = groupPriceDrafts[row.price_group_id];
-      if (draft == null || draft.trim() === "") return false;
-      if (!row.has_explicit_price) return true;
-      const current = row.price != null ? String(row.price) : "";
-      return draft.trim().replace(",", ".") !== current;
-    });
-
-    if (dirtyRows.length === 0) return;
-
-    setBatchSavingGroupPrices(true);
-    setGroupPriceRowError({});
-
-    try {
-      for (const row of dirtyRows) {
-        const price = parseOptionalNumber(groupPriceDrafts[row.price_group_id] ?? "");
-        if (price == null || price < 0) {
-          throw new Error(`Некорректная цена для «${row.price_group_name}»`);
-        }
-        await upsertProductGroupPrice({
-          productId: product.id,
-          priceGroupId: row.price_group_id,
-          price,
-        });
-      }
-      await refreshGroupPrices();
-    } catch (error: unknown) {
-      setGroupPricesError(error instanceof Error ? error.message : "Не удалось сохранить цены");
-    } finally {
-      setBatchSavingGroupPrices(false);
-    }
-  }
 
   const loading = loadedKey !== productId;
 
@@ -828,150 +671,6 @@ export default function StaffProductDetailPage() {
               />
             </label>
           </div>
-        </section>
-
-        <section className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Цены</h2>
-              <p className="mt-1 text-sm text-neutral-600">
-                Базовая цена:{" "}
-                {displayedBasePrice != null ? formatPrice(displayedBasePrice) : "—"}
-              </p>
-            </div>
-            {canEditPricing && groupPrices.some((row) => {
-              const draft = groupPriceDrafts[row.price_group_id];
-              if (draft == null || draft.trim() === "") return false;
-              if (!row.has_explicit_price) return true;
-              const current = row.price != null ? String(row.price) : "";
-              return draft.trim().replace(",", ".") !== current;
-            }) && (
-              <button
-                type="button"
-                disabled={batchSavingGroupPrices || savingGroupPriceId !== null}
-                onClick={() => {
-                  handleSaveAllGroupPrices().catch(() => undefined);
-                }}
-                className={`rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:border-[#0F766E] hover:text-[#0F766E] disabled:opacity-60 ${focusRing}`}
-              >
-                {batchSavingGroupPrices ? "Сохранение..." : "Сохранить все"}
-              </button>
-            )}
-          </div>
-
-          {groupPricesError && (
-            <p className="text-sm text-red-600" role="alert">
-              {groupPricesError}
-            </p>
-          )}
-
-          {groupPrices.length === 0 ? (
-            <p className="text-sm text-neutral-500">Ценовые группы не найдены</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[480px] text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
-                    <th className="px-3 py-2">Группа</th>
-                    <th className="px-3 py-2">Цена</th>
-                    {canEditPricing && <th className="px-3 py-2" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {groupPrices.map((row) => {
-                    const draft = groupPriceDrafts[row.price_group_id];
-                    const showFallback =
-                      !row.has_explicit_price && (draft == null || draft.trim() === "");
-                    const rowBusy = savingGroupPriceId === row.price_group_id;
-
-                    return (
-                      <tr key={row.price_group_id} className="border-b border-neutral-100 last:border-0">
-                        <td className="px-3 py-3 align-top text-neutral-800">
-                          {row.price_group_name}
-                          {row.is_default ? " (по умолчанию)" : ""}
-                          {!row.is_active ? " · архив" : ""}
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          {!canEditPricing && showFallback ? (
-                            <span className="text-neutral-600">
-                              Используется базовая цена{" "}
-                              {displayedBasePrice != null
-                                ? formatPrice(displayedBasePrice)
-                                : "—"}
-                            </span>
-                          ) : !canEditPricing ? (
-                            <span className="text-neutral-800">
-                              {row.has_explicit_price && row.price != null
-                                ? formatPrice(row.price)
-                                : "—"}
-                            </span>
-                          ) : (
-                            <div className="flex flex-col gap-1">
-                              {showFallback && (
-                                <span className="text-xs text-neutral-500">
-                                  Используется базовая цена{" "}
-                                  {displayedBasePrice != null
-                                    ? formatPrice(displayedBasePrice)
-                                    : "—"}
-                                </span>
-                              )}
-                              <input
-                                value={draft ?? ""}
-                                onChange={(event) => {
-                                  setGroupPriceDrafts((prev) => ({
-                                    ...prev,
-                                    [row.price_group_id]: event.target.value,
-                                  }));
-                                }}
-                                className={`${inputClass} max-w-[160px]`}
-                                inputMode="decimal"
-                                placeholder={showFallback ? "Переопределить" : "Цена"}
-                              />
-                            </div>
-                          )}
-                          {groupPriceRowError[row.price_group_id] && (
-                            <p className="mt-1 text-xs text-red-600" role="alert">
-                              {groupPriceRowError[row.price_group_id]}
-                            </p>
-                          )}
-                        </td>
-                        {canEditPricing && (
-                          <td className="px-3 py-3 align-top">
-                            <div className="flex flex-wrap gap-2">
-                              {!showFallback && (
-                                <button
-                                  type="button"
-                                  disabled={rowBusy || batchSavingGroupPrices}
-                                  onClick={() => {
-                                    handleSaveGroupPrice(row.price_group_id).catch(() => undefined);
-                                  }}
-                                  className={`rounded-md bg-[#0F766E] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#0c5f58] disabled:opacity-60 ${focusRing}`}
-                                >
-                                  {rowBusy ? "..." : "Сохранить"}
-                                </button>
-                              )}
-                              {row.has_explicit_price && (
-                                <button
-                                  type="button"
-                                  disabled={rowBusy || batchSavingGroupPrices}
-                                  onClick={() => {
-                                    handleClearGroupPrice(row.price_group_id).catch(() => undefined);
-                                  }}
-                                  className={`text-xs font-medium text-neutral-500 hover:text-red-600 disabled:opacity-60 ${focusRing}`}
-                                >
-                                  Сбросить
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
         </section>
 
         <section className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-5">

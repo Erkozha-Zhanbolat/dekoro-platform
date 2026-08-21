@@ -60,7 +60,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { profile, company, profileLoading } = useProfile();
-  const { items, totalAmount, hasUnpricedItems, clearCart } = useCart();
+  const { items, totalAmount, totalSavings, hasUnpricedItems, clearCart } = useCart();
 
   useEffect(() => {
     if (authLoading) {
@@ -151,6 +151,7 @@ export default function CheckoutPage() {
       company={company}
       items={items}
       totalAmount={totalAmount}
+      totalSavings={totalSavings}
       hasUnpricedItems={hasUnpricedItems}
       clearCart={clearCart}
     />
@@ -163,6 +164,7 @@ function CheckoutForm({
   company,
   items,
   totalAmount,
+  totalSavings,
   hasUnpricedItems,
   clearCart,
 }: {
@@ -171,6 +173,7 @@ function CheckoutForm({
   company: Company | null;
   items: CartItem[];
   totalAmount: number;
+  totalSavings: number;
   hasUnpricedItems: boolean;
   clearCart: () => void;
 }) {
@@ -429,6 +432,7 @@ function CheckoutForm({
         <OrderSummaryPanel
           items={items}
           knownTotal={totalAmount}
+          totalSavings={totalSavings}
           hasUnpricedItems={hasUnpricedItems}
           fulfillmentLabel={
             form.fulfillmentType

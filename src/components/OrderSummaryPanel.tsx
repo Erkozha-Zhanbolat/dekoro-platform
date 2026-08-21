@@ -1,4 +1,5 @@
 import { formatPrice } from "@/lib/formatPrice";
+import { computeDiscountPercent } from "@/lib/pricing";
 import type { CartItem } from "@/context/CartContext";
 
 export function OrderSummaryPanel({
@@ -7,12 +8,15 @@ export function OrderSummaryPanel({
   hasUnpricedItems,
   title = "Ваш заказ",
   fulfillmentLabel,
+  totalSavings = 0,
 }: {
   items: CartItem[];
   knownTotal: number;
   hasUnpricedItems: boolean;
   title?: string;
   fulfillmentLabel?: string;
+  /** ТЗ §18 — "Вы экономите X благодаря вашим условиям DEKORO". */
+  totalSavings?: number;
 }) {
   return (
     <div className="h-fit rounded-lg border border-neutral-200 p-5">
@@ -49,9 +53,17 @@ export function OrderSummaryPanel({
                   Цена уточняется
                 </span>
               ) : (
-                <p className="font-medium text-neutral-800">
-                  {formatPrice(item.product.salePrice * item.quantity)}
-                </p>
+                <>
+                  {computeDiscountPercent(item.product.listPrice, item.product.salePrice) != null
+                    && item.product.listPrice != null && (
+                    <p className="text-xs text-neutral-400 line-through">
+                      {formatPrice(item.product.listPrice * item.quantity)}
+                    </p>
+                  )}
+                  <p className="font-medium text-neutral-800">
+                    {formatPrice(item.product.salePrice * item.quantity)}
+                  </p>
+                </>
               )}
             </div>
           </li>
@@ -64,6 +76,12 @@ export function OrderSummaryPanel({
           {formatPrice(knownTotal)}
         </span>
       </div>
+
+      {totalSavings > 0 && (
+        <p className="mt-3 rounded-md bg-[#0F766E]/10 px-3 py-2 text-sm text-[#0F766E]">
+          Вы экономите {formatPrice(totalSavings)} благодаря вашим условиям DEKORO
+        </p>
+      )}
 
       {hasUnpricedItems && (
         <p className="mt-2 text-xs text-neutral-400">

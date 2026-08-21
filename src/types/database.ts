@@ -569,6 +569,16 @@ export interface ProductAvailability {
   available_quantity: number;
 }
 
+/**
+ * Legacy price-group row (supabase/migrations/002_catalog_inventory_pricing.sql,
+ * extended by 028_customer_pricing.sql). Stage 42
+ * (042_remove_legacy_price_groups.sql) removes price groups from runtime
+ * price resolution and from the staff UI; the table itself is kept in the
+ * database (unused) — see that migration's section 8 for why. Kept here
+ * only because public.price_groups / public.product_prices rows still
+ * physically exist and some historical order_items reference
+ * price_source = 'price_group'.
+ */
 export interface PriceGroup {
   id: string;
   name: string;
@@ -581,18 +591,31 @@ export interface PriceGroup {
   updated_at: string;
 }
 
-export type PriceSource = "individual" | "legacy_company" | "price_group" | "base";
+/**
+ * Extended by supabase/migrations/041_order_pricing_engine.sql with
+ * "quantity_tier" (automatic, from product_quantity_prices) and
+ * "manager_override" (manual, staff_set_order_item_price). "price_group"
+ * and "legacy_company" are retired from NEW price resolution as of Stage 42
+ * (042_remove_legacy_price_groups.sql) but kept in this union because
+ * historical order_items rows still carry those values and must keep
+ * rendering correctly (PRICE_SOURCE_LABELS below).
+ */
+export type PriceSource =
+  | "individual"
+  | "legacy_company"
+  | "price_group"
+  | "base"
+  | "quantity_tier"
+  | "manager_override";
 
-/** Payload action for admin_bulk_update_product_prices. */
-export type BulkPriceAction = "keep" | "set" | "reset";
-
+/**
+ * Payload for admin_bulk_update_product_prices — retail (base) price only
+ * as of Stage 42. The RPC still accepts an optional `groups` array for
+ * backward compatibility with its own signature; the client always omits
+ * it now (see bulkUpdateProductPrices in lib/staff/pricing.ts).
+ */
 export type BulkProductPricesPayload = {
   base: { action: "keep" } | { action: "set"; price: number };
-  groups: Array<
-    | { price_group_id: string; action: "keep" }
-    | { price_group_id: string; action: "set"; price: number }
-    | { price_group_id: string; action: "reset" }
-  >;
 };
 
 export type BulkProductPricesResult = {
@@ -602,26 +625,43 @@ export type BulkProductPricesResult = {
   group_resets: number;
 };
 
-/** Row from staff_get_product_prices. */
-export type ProductGroupPriceRow = {
-  price_group_id: string;
-  price_group_name: string;
-  price_group_code: string;
-  sort_order: number;
-  is_active: boolean;
-  is_default: boolean;
-  price: number | null;
-  has_explicit_price: boolean;
+/**
+ * Payload for admin_bulk_update_product_pricing (043_bulk_product_pricing.sql).
+ * Retail price and quantity tiers only — never customer_product_prices or
+ * order_items. `tiers` omitted/empty means "no tier change" regardless of mode.
+ */
+export type BulkProductPricingTierMode = "merge" | "replace";
+
+export type BulkProductPricingTierInput = {
+  minQuantity: number;
+  price: number;
 };
 
-/** Row from admin_list_pricing_matrix. */
-export type PricingMatrixRow = {
+export type BulkProductPricingPayload = {
+  updateBase: boolean;
+  basePrice?: number | null;
+  tiers: BulkProductPricingTierInput[];
+  tierMode: BulkProductPricingTierMode;
+};
+
+export type BulkProductPricingResult = {
+  updated_products: number;
+  base_price_changed: boolean;
+  base_price: number | null;
+  tiers_changed: boolean;
+  tier_mode: BulkProductPricingTierMode | null;
+  tiers_count: number;
+  tier_rows_written: number;
+};
+
+/** Row from admin_list_product_pricing_overview (042) — retail price + quantity tiers. */
+export type ProductPricingOverviewRow = {
   product_id: string;
   sku: string;
   name: string;
   category_name: string | null;
   base_price: number | null;
-  group_prices: Record<string, number>;
+  quantity_tiers: Array<{ min_quantity: number; price: number }>;
 };
 
 /** Row from staff_list_customer_product_prices (individual overrides only). */
@@ -634,6 +674,81 @@ export type CustomerProductPriceRow = {
   individual_price: number | null;
   effective_price: number | null;
   price_source: PriceSource;
+};
+
+/**
+ * Row from public.product_quantity_prices (041) — quantity-based pricing
+ * tiers. Rule: the applicable tier is the one with the largest
+ * min_quantity <= requested quantity (no overlapping ranges).
+ */
+export type ProductQuantityPriceRow = {
+  id: string;
+  product_id: string;
+  min_quantity: number;
+  price: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Row from public.pricing_guard_settings (041) — singleton cost/discount
+ * guard, deliberately minimal (ТЗ §22): not a full approval workflow, just
+ * a configurable floor below which a manager needs admin help.
+ */
+export type PricingGuardSettings = {
+  max_manager_discount_percent: number | null;
+  min_margin_over_cost_percent: number | null;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+/** Manager-override reason (order_items.manual_price_reason, 041). */
+export type ManualPriceReason =
+  | "regular_customer"
+  | "object_top_up"
+  | "approved_by_management"
+  | "compensation"
+  | "other";
+
+export const MANUAL_PRICE_REASON_LABELS: Record<ManualPriceReason, string> = {
+  regular_customer: "Постоянный клиент",
+  object_top_up: "Добор на объект",
+  approved_by_management: "Согласовано руководителем",
+  compensation: "Компенсация",
+  other: "Другое",
+};
+
+export const PRICE_SOURCE_LABELS: Record<PriceSource, string> = {
+  base: "Розничная",
+  price_group: "Ценовая группа",
+  individual: "Индивидуальная цена",
+  legacy_company: "Индивидуальная цена (компания)",
+  quantity_tier: "Цена от количества",
+  manager_override: "Ручная цена менеджера",
+};
+
+/**
+ * Output of public.resolve_order_item_price() / staff_preview_item_price()
+ * — the *automatic* price for one line, before any manager override.
+ */
+export type ItemPricePreview = {
+  list_price: number | null;
+  resolved_price: number | null;
+  resolved_source: PriceSource | null;
+  tier_min_quantity: number | null;
+};
+
+/**
+ * Row from public.staff_get_customer_product_price_history() (041) — a
+ * hint for managers, never an automatic rule. Excludes cancelled orders.
+ */
+export type CustomerProductPriceHistoryEntry = {
+  order_id: string;
+  order_number: string;
+  unit_price: number;
+  quantity: number;
+  status: OrderStatus;
+  ordered_at: string;
 };
 
 export interface ProductPrice {
@@ -823,6 +938,19 @@ export interface OrderItem {
   unit_price: number;
   line_total: number;
   created_at: string;
+  // Price snapshot / manager-override fields added by
+  // supabase/migrations/041_order_pricing_engine.sql. Nullable for every
+  // pre-041 row (backward compatible — unit_price/line_total above remain
+  // that order's authoritative historical price regardless).
+  list_price: number | null;
+  auto_price: number | null;
+  price_source: PriceSource | null;
+  quantity_tier_min_quantity: number | null;
+  is_manual_price: boolean;
+  manual_price_reason: ManualPriceReason | null;
+  manual_price_comment: string | null;
+  price_overridden_by: string | null;
+  price_overridden_at: string | null;
 }
 
 /** Fields a client may supply when inserting into public.orders (RLS-scoped). */
@@ -1478,7 +1606,9 @@ export type OrderActivityEventType =
   | "payment_completed"
   | "payment_shortfall_after_reversal"
   | "payment_claimed"
-  | "invoice_generation_failed";
+  | "invoice_generation_failed"
+  | "item_price_overridden"
+  | "item_price_reset";
 
 export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string> = {
   manager_assigned: "Менеджер назначен",
@@ -1490,6 +1620,8 @@ export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string>
   payment_shortfall_after_reversal: "Недофинансирование после сторно",
   payment_claimed: "Клиент сообщил об оплате",
   invoice_generation_failed: "Не удалось сформировать счёт",
+  item_price_overridden: "Цена позиции изменена менеджером",
+  item_price_reset: "Ручная цена позиции сброшена",
 };
 
 /** Staff in-app notification types (029 + 030_workflow_notifications.sql). */

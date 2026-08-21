@@ -16,9 +16,13 @@ import {
   isDeadlineOverdue,
   listAssignableManagers,
   removeStaffOrderItem,
+  resetStaffOrderItemPrice,
   updateStaffOrderDeadlines,
   updateStaffOrderItemQuantity,
 } from "@/lib/staff/orders";
+import StaffOverrideOrderItemPriceModal from "@/components/staff/StaffOverrideOrderItemPriceModal";
+import { computeDiscountPercent, computeSavingsPerUnit } from "@/lib/pricing";
+import { MANUAL_PRICE_REASON_LABELS } from "@/types/database";
 import type {
   StaffManagerOption,
   StaffOrderDetail,
@@ -95,6 +99,7 @@ export default function StaffOrderDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedId, setLoadedId] = useState<string | undefined>(undefined);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
+  const [overrideItem, setOverrideItem] = useState<StaffOrderDetailItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [managers, setManagers] = useState<StaffManagerOption[]>([]);
@@ -929,13 +934,14 @@ export default function StaffOrderDetailPage() {
                         item={item}
                         orderNumber={order.order_number}
                         onChanged={refetchOrder}
+                        onOverride={() => setOverrideItem(item)}
                       />
                     ) : (
                       <tr key={item.id} className="border-b border-neutral-100 last:border-b-0">
                         <td className="px-4 py-3 text-neutral-800">{item.product_name}</td>
                         <td className="px-4 py-3 text-right text-neutral-600">{item.quantity}</td>
                         <td className="px-4 py-3 text-right text-neutral-600">
-                          {formatPrice(item.unit_price)}
+                          <ItemPriceCell item={item} />
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-neutral-800">
                           {formatPrice(item.total)}
@@ -966,6 +972,23 @@ export default function StaffOrderDetailPage() {
               </span>
             </div>
           </div>
+
+          {overrideItem && (
+            <StaffOverrideOrderItemPriceModal
+              orderItemId={overrideItem.id}
+              productId={overrideItem.product_id}
+              productName={overrideItem.product_name}
+              customerId={order.customer_id}
+              listPrice={overrideItem.list_price}
+              autoPrice={overrideItem.auto_price}
+              currentPrice={overrideItem.unit_price}
+              onClose={() => setOverrideItem(null)}
+              onSaved={() => {
+                setOverrideItem(null);
+                void refetchOrder();
+              }}
+            />
+          )}
         </section>
 
         <section className="rounded-lg border border-neutral-200 bg-white p-5">
@@ -1229,45 +1252,93 @@ export default function StaffOrderDetailPage() {
   );
 }
 
+/** Retail/auto strikethrough + discount badge, shared by read-only and editable rows. */
+function ItemPriceCell({ item }: { item: StaffOrderDetailItem }) {
+  const referencePrice = item.list_price ?? item.auto_price;
+  const discountPercent = computeDiscountPercent(referencePrice, item.unit_price);
+  const hasDiscount = discountPercent != null;
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      {hasDiscount && referencePrice != null && (
+        <span className="text-xs text-neutral-400 line-through">{formatPrice(referencePrice)}</span>
+      )}
+      <span className={hasDiscount ? "font-medium text-neutral-800" : "text-neutral-600"}>
+        {formatPrice(item.unit_price)}
+      </span>
+      {item.is_manual_price && (
+        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+          Ручная скидка
+          {item.manual_price_reason ? ` · ${MANUAL_PRICE_REASON_LABELS[item.manual_price_reason]}` : ""}
+        </span>
+      )}
+      {!item.is_manual_price && item.price_source === "quantity_tier" && (
+        <span className="rounded-full bg-[#0F766E]/10 px-2 py-0.5 text-[11px] font-medium text-[#0F766E]">
+          Цена от количества
+        </span>
+      )}
+    </div>
+  );
+}
+
 function EditableOrderItemRow({
   item,
   orderNumber,
   onChanged,
+  onOverride,
 }: {
   item: StaffOrderDetailItem;
   orderNumber: string;
   onChanged: () => Promise<void>;
+  onOverride: () => void;
 }) {
   const [quantityInput, setQuantityInput] = useState(String(item.quantity));
   const [syncedQuantity, setSyncedQuantity] = useState(item.quantity);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [showQuantityChoice, setShowQuantityChoice] = useState(false);
 
   if (item.quantity !== syncedQuantity) {
     setSyncedQuantity(item.quantity);
     setQuantityInput(String(item.quantity));
+    setShowQuantityChoice(false);
   }
 
   const parsedQuantity = Number(quantityInput);
   const isValidQuantity = Number.isInteger(parsedQuantity) && parsedQuantity > 0;
   const isDirty = isValidQuantity && parsedQuantity !== item.quantity;
-  const busy = saving || removing;
+  const busy = saving || removing || resetting;
+  const savingsPerUnit = computeSavingsPerUnit(item.list_price ?? item.auto_price, item.unit_price);
 
-  async function handleSaveQuantity() {
-    if (!isDirty || busy) {
-      return;
-    }
+  async function applyQuantity(recalculate: boolean) {
     setSaving(true);
     setRowError(null);
+    setShowQuantityChoice(false);
     try {
       await updateStaffOrderItemQuantity(item.id, parsedQuantity);
+      if (recalculate) {
+        await resetStaffOrderItemPrice(item.id);
+      }
       await onChanged();
     } catch (error) {
       setRowError(error instanceof Error ? error.message : "Не удалось изменить количество");
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleSaveQuantity() {
+    if (!isDirty || busy) {
+      return;
+    }
+    if (item.is_manual_price) {
+      // Never a silent re-price — surface the choice explicitly (ТЗ §14).
+      setShowQuantityChoice(true);
+      return;
+    }
+    void applyQuantity(false);
   }
 
   async function handleRemove() {
@@ -1291,14 +1362,64 @@ function EditableOrderItemRow({
     }
   }
 
+  async function handleResetPrice() {
+    if (busy) {
+      return;
+    }
+    setResetting(true);
+    setRowError(null);
+    try {
+      await resetStaffOrderItemPrice(item.id);
+      await onChanged();
+    } catch (error) {
+      setRowError(error instanceof Error ? error.message : "Не удалось сбросить ручную цену");
+      setResetting(false);
+    }
+  }
+
   return (
-    <tr className="border-b border-neutral-100 last:border-b-0">
+    <tr className="border-b border-neutral-100 last:border-b-0 align-top">
       <td className="px-4 py-3 text-neutral-800">
         {item.product_name}
         {rowError && (
           <p className="mt-1 text-xs text-red-600" role="alert">
             {rowError}
           </p>
+        )}
+        {showQuantityChoice && (
+          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+            <p>
+              Количество изменилось. Для позиции установлена ручная цена{" "}
+              {formatPrice(item.unit_price)}. Сохранить ручную цену или пересчитать
+              автоматически?
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void applyQuantity(false)}
+                disabled={busy}
+                className={`rounded-md border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-800 hover:bg-amber-100 ${focusRing}`}
+              >
+                Сохранить ручную цену
+              </button>
+              <button
+                type="button"
+                onClick={() => void applyQuantity(true)}
+                disabled={busy}
+                className={`rounded-md bg-[#0F766E] px-2.5 py-1 font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+              >
+                Пересчитать автоматически
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowQuantityChoice(false)}
+                disabled={busy}
+                className={`px-2.5 py-1 font-medium text-amber-700 hover:underline ${focusRing}`}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
         )}
       </td>
       <td className="px-4 py-3">
@@ -1311,7 +1432,7 @@ function EditableOrderItemRow({
             onChange={(event) => setQuantityInput(event.target.value)}
             className={`w-20 rounded-md border border-neutral-200 px-2 py-1.5 text-right text-sm text-neutral-800 outline-none focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] disabled:bg-neutral-100 ${focusRing}`}
           />
-          {isDirty && (
+          {isDirty && !showQuantityChoice && (
             <button
               type="button"
               onClick={handleSaveQuantity}
@@ -1323,19 +1444,46 @@ function EditableOrderItemRow({
           )}
         </div>
       </td>
-      <td className="px-4 py-3 text-right text-neutral-600">{formatPrice(item.unit_price)}</td>
+      <td className="px-4 py-3 text-right text-neutral-600">
+        <ItemPriceCell item={item} />
+        {item.is_manual_price && savingsPerUnit != null && (
+          <p className="mt-0.5 text-[11px] text-emerald-700">
+            Экономия: {formatPrice(savingsPerUnit)}
+          </p>
+        )}
+      </td>
       <td className="px-4 py-3 text-right font-medium text-neutral-800">
         {formatPrice(item.total)}
       </td>
       <td className="px-4 py-3 text-right">
-        <button
-          type="button"
-          onClick={handleRemove}
-          disabled={busy}
-          className={`text-sm font-medium text-red-600 hover:text-red-700 disabled:text-neutral-400 rounded-sm ${focusRing}`}
-        >
-          {removing ? "Удаление..." : "Удалить"}
-        </button>
+        <div className="flex flex-col items-end gap-1.5">
+          <button
+            type="button"
+            onClick={onOverride}
+            disabled={busy}
+            className={`text-sm font-medium text-[#0F766E] hover:text-[#0c5f58] disabled:text-neutral-400 rounded-sm ${focusRing}`}
+          >
+            Изменить цену
+          </button>
+          {item.is_manual_price && (
+            <button
+              type="button"
+              onClick={handleResetPrice}
+              disabled={busy}
+              className={`text-xs font-medium text-neutral-500 hover:text-neutral-700 disabled:text-neutral-300 rounded-sm ${focusRing}`}
+            >
+              {resetting ? "Сброс..." : "Сбросить"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleRemove}
+            disabled={busy}
+            className={`text-sm font-medium text-red-600 hover:text-red-700 disabled:text-neutral-400 rounded-sm ${focusRing}`}
+          >
+            {removing ? "Удаление..." : "Удалить"}
+          </button>
+        </div>
       </td>
     </tr>
   );

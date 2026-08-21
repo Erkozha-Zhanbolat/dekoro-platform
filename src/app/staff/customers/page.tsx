@@ -132,7 +132,6 @@ export default function StaffCustomersPage() {
                 <th className="px-5 py-3">Контакт</th>
                 <th className="px-5 py-3">Телефон</th>
                 <th className="px-5 py-3">Email</th>
-                <th className="px-5 py-3">Ценовая категория</th>
                 <th className="px-5 py-3">Статус</th>
                 <th className="px-5 py-3" />
               </tr>
@@ -158,9 +157,6 @@ export default function StaffCustomersPage() {
                     </td>
                     <td className="px-5 py-3 text-neutral-600">{customer.phone ?? "—"}</td>
                     <td className="px-5 py-3 text-neutral-600">{customer.email ?? "—"}</td>
-                    <td className="px-5 py-3 text-neutral-600">
-                      {customer.price_group_name ?? "—"}
-                    </td>
                     <td className="px-5 py-3 text-neutral-600">{statusLabel(customer)}</td>
                     <td className="px-5 py-3 text-right">
                       <Link

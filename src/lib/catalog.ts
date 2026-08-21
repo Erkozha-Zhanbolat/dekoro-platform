@@ -24,6 +24,8 @@ export type CatalogProduct = {
   unit: string;
   available_stock: number;
   sale_price: number | null;
+  /** products.base_price, added by 041_order_pricing_engine.sql — public retail price. */
+  list_price: number | null;
   image: string | null;
   is_promotion: boolean;
   updated_at: string;
@@ -135,6 +137,9 @@ export function mapCatalogProductToProduct(entry: CatalogProduct): Product {
     salePrice: entry.sale_price === null || entry.sale_price === undefined
       ? null
       : Number(entry.sale_price),
+    listPrice: entry.list_price === null || entry.list_price === undefined
+      ? null
+      : Number(entry.list_price),
     image: resolveCatalogImageUrl(entry.image, entry.updated_at),
     isPromotion: Boolean(entry.is_promotion),
   };

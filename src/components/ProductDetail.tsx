@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/lib/formatPrice";
+import { computeDiscountPercent, computeSavingsPerUnit } from "@/lib/pricing";
+import { getCartPricing } from "@/lib/cartPricing";
+import type { CartPricingRow } from "@/lib/cartPricing";
 import { getAvailableStock } from "@/lib/inventory";
 import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
@@ -50,6 +53,33 @@ export default function ProductDetail({ product }: { product: Product }) {
 
   const totalForQuantity =
     product.salePrice === null ? null : product.salePrice * selectedQuantity;
+
+  const discountPercent = computeDiscountPercent(product.listPrice, product.salePrice);
+  const savingsPerUnit = computeSavingsPerUnit(product.listPrice, product.salePrice);
+
+  // Quantity-aware "next threshold" nudge (ТЗ §16) — re-resolved server-side
+  // via get_cart_pricing() as the selected quantity changes; never trusted
+  // for the actual charge (create_order() re-resolves at checkout).
+  const [pricing, setPricing] = useState<CartPricingRow | null>(null);
+  useEffect(() => {
+    if (product.salePrice === null) {
+      return;
+    }
+    let ignore = false;
+    const timeout = setTimeout(() => {
+      getCartPricing([{ productId: product.id, quantity: selectedQuantity }])
+        .then((rows) => {
+          if (!ignore) setPricing(rows[0] ?? null);
+        })
+        .catch(() => {
+          if (!ignore) setPricing(null);
+        });
+    }, 250);
+    return () => {
+      ignore = true;
+      clearTimeout(timeout);
+    };
+  }, [product.id, product.salePrice, selectedQuantity]);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
@@ -107,14 +137,47 @@ export default function ProductDetail({ product }: { product: Product }) {
                 Цена доступна после авторизации
               </p>
             ) : (
-              <p className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold text-neutral-800">
-                  {formatPrice(product.salePrice)}
-                </span>
-                <span className="text-sm text-neutral-500">
-                  / {product.unit}
-                </span>
-              </p>
+              <>
+                {discountPercent != null && product.listPrice != null && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-neutral-400 line-through">
+                      {formatPrice(product.listPrice)}
+                    </span>
+                    <span className="rounded-full bg-[#0F766E]/10 px-2 py-0.5 text-xs font-medium text-[#0F766E]">
+                      −{discountPercent}%
+                    </span>
+                  </div>
+                )}
+                <p className="flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-neutral-800">
+                    {formatPrice(product.salePrice)}
+                  </span>
+                  <span className="text-sm text-neutral-500">
+                    / {product.unit}
+                  </span>
+                </p>
+                {discountPercent != null && (
+                  <p className="mt-1 text-sm font-medium text-[#0F766E]">Ваша цена</p>
+                )}
+                {savingsPerUnit != null && (
+                  <p className="mt-1 text-sm text-emerald-700">
+                    Вы экономите {formatPrice(savingsPerUnit)} с каждой {product.unit === "шт." ? "штуки" : "единицы"}
+                  </p>
+                )}
+                {pricing?.nextTierPrice != null && pricing.nextTierMinQuantity != null && (
+                  <p className="mt-1 text-sm text-neutral-500">
+                    От {pricing.nextTierMinQuantity} {product.unit} цена снизится до{" "}
+                    {formatPrice(pricing.nextTierPrice)}
+                  </p>
+                )}
+                {pricing?.priceSource === "quantity_tier"
+                  && pricing.quantityTierMinQuantity != null
+                  && pricing.quantityTierMinQuantity > 1 && (
+                  <p className="mt-1 text-sm text-neutral-500">
+                    От {pricing.quantityTierMinQuantity} {product.unit} — {formatPrice(product.salePrice)}/{product.unit}
+                  </p>
+                )}
+              </>
             )}
           </div>
 

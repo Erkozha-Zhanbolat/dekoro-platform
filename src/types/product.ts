@@ -20,6 +20,13 @@ export interface Product {
   stock: number;
   reserved: number;
   salePrice: number | null;
+  /**
+   * Retail/base price (products.base_price via get_catalog(), 041) — shown
+   * struck-through for comparison. Public for guests and authenticated
+   * customers alike; `salePrice` above is the actual price to charge and
+   * stays null for guests (personalized pricing requires authentication).
+   */
+  listPrice: number | null;
   image: string | null;
   isPromotion: boolean;
 }

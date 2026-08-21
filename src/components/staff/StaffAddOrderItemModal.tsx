@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { formatPrice } from "@/lib/formatPrice";
+import { computeDiscountPercent } from "@/lib/pricing";
 import { searchStaffProducts } from "@/lib/staff/inventory";
 import type { StaffProductSearchResult } from "@/lib/staff/inventory";
-import { addStaffOrderItem } from "@/lib/staff/orders";
+import { addStaffOrderItem, previewStaffItemPrice } from "@/lib/staff/orders";
+import type { ItemPricePreview } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -140,6 +142,7 @@ export default function StaffAddOrderItemModal({
                     key={product.product_id}
                     product={product}
                     orderId={orderId}
+                    customerId={customerId}
                     onAdded={onAdded}
                   />
                 ))}
@@ -152,20 +155,41 @@ export default function StaffAddOrderItemModal({
   );
 }
 
+const PRICE_PREVIEW_DEBOUNCE_MS = 250;
+
 function ProductRow({
   product,
   orderId,
+  customerId,
   onAdded,
 }: {
   product: StaffProductSearchResult;
   orderId: string;
+  customerId: string | null;
   onAdded: () => void;
 }) {
   const [quantity, setQuantity] = useState(1);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ItemPricePreview | null>(null);
 
   const outOfStock = product.available_quantity <= 0;
+
+  useEffect(() => {
+    if (outOfStock) {
+      return;
+    }
+    const timeout = setTimeout(() => {
+      previewStaffItemPrice(product.product_id, customerId, quantity)
+        .then(setPreview)
+        .catch(() => setPreview(null));
+    }, PRICE_PREVIEW_DEBOUNCE_MS);
+    return () => clearTimeout(timeout);
+  }, [product.product_id, customerId, quantity, outOfStock]);
+
+  const listPrice = preview?.list_price ?? product.price;
+  const resolvedPrice = preview?.resolved_price ?? product.price;
+  const discountPercent = computeDiscountPercent(listPrice, resolvedPrice);
 
   async function handleAdd() {
     if (adding || outOfStock || quantity <= 0) {
@@ -201,8 +225,24 @@ function ProductRow({
           </p>
         )}
       </td>
-      <td className="px-4 py-3 text-right text-sm text-neutral-600">
-        {product.price !== null ? formatPrice(product.price) : "—"}
+      <td className="px-4 py-3 text-right text-sm">
+        {resolvedPrice != null ? (
+          <div className="flex flex-col items-end gap-0.5">
+            {discountPercent != null && listPrice != null && (
+              <span className="text-xs text-neutral-400 line-through">
+                {formatPrice(listPrice)}
+              </span>
+            )}
+            <span className={discountPercent != null ? "font-medium text-neutral-800" : "text-neutral-600"}>
+              {formatPrice(resolvedPrice)}
+            </span>
+            {preview?.resolved_source === "quantity_tier" && (
+              <span className="text-[11px] font-medium text-[#0F766E]">от количества</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-neutral-600">—</span>
+        )}
       </td>
       <td className="px-4 py-3 text-right text-sm text-neutral-600">
         {product.physical_quantity}

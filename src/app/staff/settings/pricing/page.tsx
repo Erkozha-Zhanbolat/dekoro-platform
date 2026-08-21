@@ -1,23 +1,21 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { listStaffCategories } from "@/lib/staff/products";
 import {
-  archivePriceGroup,
-  batchUpsertProductGroupPrices,
-  createPriceGroup,
-  listAdminPriceGroups,
-  listPricingMatrix,
-  reorderPriceGroups,
-  restorePriceGroup,
-  setDefaultPriceGroup,
-  updatePriceGroup,
+  bulkUpdateProductPrices,
+  getPricingGuardSettings,
+  listProductPricingIds,
+  listProductPricingOverview,
+  updatePricingGuardSettings,
 } from "@/lib/staff/pricing";
-import type { PriceGroup, PricingMatrixRow } from "@/types/database";
+import type { PricingGuardSettings, ProductPricingOverviewRow } from "@/types/database";
+import ProductQuantityTiersModal from "@/components/staff/ProductQuantityTiersModal";
+import StaffBulkSetPricesModal from "@/components/staff/StaffBulkSetPricesModal";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -31,13 +29,7 @@ const btnPrimary =
 const btnSecondary =
   `rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:border-[#0F766E] hover:text-[#0F766E] disabled:opacity-50 ${focusRing}`;
 
-const MATRIX_PAGE_SIZE = 50;
-
-type CellKey = `${string}:${string}`;
-
-function cellKey(productId: string, groupId: string): CellKey {
-  return `${productId}:${groupId}`;
-}
+const PRODUCT_PAGE_SIZE = 50;
 
 function SettingsNav({ active }: { active: "org" | "users" | "pricing" | "data" }) {
   const tabClass = (isActive: boolean) =>
@@ -79,62 +71,44 @@ function SettingsNav({ active }: { active: "org" | "users" | "pricing" | "data" 
   );
 }
 
+function formatTiersSummary(tiers: ProductPricingOverviewRow["quantity_tiers"]): string {
+  if (tiers.length === 0) return "—";
+  return tiers
+    .map((tier) => `от ${tier.min_quantity} — ${formatPrice(tier.price)}`)
+    .join(" · ");
+}
+
 export default function StaffPricingSettingsPage() {
   const router = useRouter();
   const { profile } = useProfile();
   const isAdmin = profile?.role === "admin";
 
-  const [groupsLoading, setGroupsLoading] = useState(true);
-  const [groupsError, setGroupsError] = useState<string | null>(null);
-  const [priceGroups, setPriceGroups] = useState<PriceGroup[]>([]);
-  const [groupBusy, setGroupBusy] = useState<string | null>(null);
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editGroup, setEditGroup] = useState<PriceGroup | null>(null);
-
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
-  const [matrixQuery, setMatrixQuery] = useState("");
-  const [matrixCategoryId, setMatrixCategoryId] = useState("");
-  const [matrixRows, setMatrixRows] = useState<PricingMatrixRow[]>([]);
-  const [matrixOffset, setMatrixOffset] = useState(0);
-  const [matrixHasMore, setMatrixHasMore] = useState(false);
-  const [matrixLoading, setMatrixLoading] = useState(true);
-  const [matrixError, setMatrixError] = useState<string | null>(null);
-  const [matrixLoadingMore, setMatrixLoadingMore] = useState(false);
+  const [productQuery, setProductQuery] = useState("");
+  const [productCategoryId, setProductCategoryId] = useState("");
+  const [products, setProducts] = useState<ProductPricingOverviewRow[]>([]);
+  const [productOffset, setProductOffset] = useState(0);
+  const [productHasMore, setProductHasMore] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [productsLoadingMore, setProductsLoadingMore] = useState(false);
 
-  const [originalPrices, setOriginalPrices] = useState<Map<CellKey, number>>(new Map());
-  const [edits, setEdits] = useState<Map<CellKey, string>>(new Map());
-  /** Explicit reset markers — empty/Backspace alone must NOT delete overrides. */
-  const [resetKeys, setResetKeys] = useState<Set<CellKey>>(new Set());
-  const [saveBusy, setSaveBusy] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveOk, setSaveOk] = useState(false);
+  const [tiersModalProduct, setTiersModalProduct] = useState<ProductPricingOverviewRow | null>(null);
+  const [editPriceProduct, setEditPriceProduct] = useState<ProductPricingOverviewRow | null>(null);
 
-  const activeGroups = useMemo(
-    () =>
-      [...priceGroups]
-        .filter((g) => g.is_active)
-        .sort((a, b) => a.sort_order - b.sort_order),
-    [priceGroups],
-  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [matchedIds, setMatchedIds] = useState<string[]>([]);
+  const [matchedIdsLoading, setMatchedIdsLoading] = useState(false);
+  const [bulkPricingModalOpen, setBulkPricingModalOpen] = useState(false);
+  const [bulkPricingOk, setBulkPricingOk] = useState<string | null>(null);
 
-  const sortedGroups = useMemo(
-    () => [...priceGroups].sort((a, b) => a.sort_order - b.sort_order),
-    [priceGroups],
-  );
-
-  const dirtyCount = useMemo(() => {
-    let count = resetKeys.size;
-    for (const [key, value] of edits) {
-      if (resetKeys.has(key)) continue;
-      const original = originalPrices.get(key);
-      const trimmed = value.trim();
-      if (trimmed === "") continue; // empty = keep, never auto-reset
-      const num = Number(trimmed);
-      if (Number.isFinite(num) && num !== original) count += 1;
-    }
-    return count;
-  }, [edits, originalPrices, resetKeys]);
+  const [guardSettings, setGuardSettings] = useState<PricingGuardSettings | null>(null);
+  const [guardLoading, setGuardLoading] = useState(true);
+  const [guardError, setGuardError] = useState<string | null>(null);
+  const [guardDiscountInput, setGuardDiscountInput] = useState("");
+  const [guardMarginInput, setGuardMarginInput] = useState("");
+  const [guardSaving, setGuardSaving] = useState(false);
+  const [guardSaveOk, setGuardSaveOk] = useState(false);
 
   useEffect(() => {
     if (profile && profile.role !== "admin") {
@@ -142,232 +116,161 @@ export default function StaffPricingSettingsPage() {
     }
   }, [profile, router]);
 
-  const reloadGroups = useCallback(async () => {
-    setGroupsLoading(true);
-    setGroupsError(null);
-    try {
-      const rows = await listAdminPriceGroups(true);
-      setPriceGroups(rows);
-    } catch (err: unknown) {
-      setGroupsError(err instanceof Error ? err.message : "Не удалось загрузить группы");
-    } finally {
-      setGroupsLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+    if (!isAdmin) return;
+    listStaffCategories(false)
+      .then((rows) => setCategories(rows.map((c) => ({ id: c.id, name: c.name }))))
+      .catch(() => setCategories([]));
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!isAdmin) return;
     queueMicrotask(() => {
-      void reloadGroups();
+      setGuardLoading(true);
+      getPricingGuardSettings()
+        .then((settings) => {
+          setGuardSettings(settings);
+          setGuardDiscountInput(
+            settings.max_manager_discount_percent != null
+              ? String(settings.max_manager_discount_percent)
+              : "",
+          );
+          setGuardMarginInput(
+            settings.min_margin_over_cost_percent != null
+              ? String(settings.min_margin_over_cost_percent)
+              : "",
+          );
+          setGuardError(null);
+        })
+        .catch((err: unknown) => {
+          setGuardError(err instanceof Error ? err.message : "Не удалось загрузить настройки");
+        })
+        .finally(() => setGuardLoading(false));
     });
-    listStaffCategories(false)
-      .then((rows) => setCategories(rows.map((c) => ({ id: c.id, name: c.name }))))
-      .catch(() => setCategories([]));
-  }, [isAdmin, reloadGroups]);
+  }, [isAdmin]);
 
-  const loadMatrix = useCallback(
+  async function handleSaveGuardSettings() {
+    if (guardSaving) return;
+    const discountTrimmed = guardDiscountInput.trim();
+    const marginTrimmed = guardMarginInput.trim();
+    const discount = discountTrimmed === "" ? null : Number(discountTrimmed);
+    const margin = marginTrimmed === "" ? null : Number(marginTrimmed);
+
+    if (discount != null && (!Number.isFinite(discount) || discount < 0 || discount > 100)) {
+      setGuardError("Максимальная скидка менеджера должна быть от 0 до 100%");
+      return;
+    }
+    if (margin != null && (!Number.isFinite(margin) || margin < 0)) {
+      setGuardError("Минимальная наценка не может быть отрицательной");
+      return;
+    }
+
+    setGuardSaving(true);
+    setGuardError(null);
+    setGuardSaveOk(false);
+    try {
+      const updated = await updatePricingGuardSettings({
+        maxManagerDiscountPercent: discount,
+        minMarginOverCostPercent: margin,
+      });
+      setGuardSettings(updated);
+      setGuardSaveOk(true);
+    } catch (err: unknown) {
+      setGuardError(err instanceof Error ? err.message : "Не удалось сохранить настройки");
+    } finally {
+      setGuardSaving(false);
+    }
+  }
+
+  const loadProducts = useCallback(
     async (append: boolean) => {
-      const offset = append ? matrixOffset : 0;
+      const offset = append ? productOffset : 0;
       if (append) {
-        setMatrixLoadingMore(true);
+        setProductsLoadingMore(true);
       } else {
-        setMatrixLoading(true);
-        setMatrixError(null);
+        setProductsLoading(true);
+        setProductsError(null);
       }
 
       try {
-        const rows = await listPricingMatrix({
-          query: matrixQuery,
-          categoryId: matrixCategoryId || null,
-          limit: MATRIX_PAGE_SIZE,
+        const rows = await listProductPricingOverview({
+          query: productQuery,
+          categoryId: productCategoryId || null,
+          limit: PRODUCT_PAGE_SIZE,
           offset,
         });
 
-        setOriginalPrices((prev) => {
-          const next = append ? new Map(prev) : new Map<CellKey, number>();
-          for (const row of rows) {
-            for (const [groupId, price] of Object.entries(row.group_prices)) {
-              next.set(cellKey(row.product_id, groupId), price);
-            }
-          }
-          return next;
-        });
-
         if (append) {
-          setMatrixRows((prev) => [...prev, ...rows]);
+          setProducts((prev) => [...prev, ...rows]);
         } else {
-          setMatrixRows(rows);
-          setEdits(new Map());
-          setResetKeys(new Set());
-          setSaveOk(false);
+          setProducts(rows);
         }
-        setMatrixHasMore(rows.length === MATRIX_PAGE_SIZE);
-        setMatrixOffset(offset + rows.length);
+        setProductHasMore(rows.length === PRODUCT_PAGE_SIZE);
+        setProductOffset(offset + rows.length);
       } catch (err: unknown) {
-        setMatrixError(err instanceof Error ? err.message : "Не удалось загрузить матрицу");
+        setProductsError(err instanceof Error ? err.message : "Не удалось загрузить товары");
       } finally {
-        setMatrixLoading(false);
-        setMatrixLoadingMore(false);
+        setProductsLoading(false);
+        setProductsLoadingMore(false);
       }
     },
-    [matrixCategoryId, matrixOffset, matrixQuery],
+    [productCategoryId, productOffset, productQuery],
   );
 
   useEffect(() => {
     if (!isAdmin) return;
     const t = setTimeout(() => {
-      setMatrixOffset(0);
-      void loadMatrix(false);
+      setProductOffset(0);
+      void loadProducts(false);
+      setSelectedIds(new Set());
+      setBulkPricingOk(null);
+
+      setMatchedIdsLoading(true);
+      listProductPricingIds({ query: productQuery, categoryId: productCategoryId || null })
+        .then((ids) => setMatchedIds(ids))
+        .catch(() => setMatchedIds([]))
+        .finally(() => setMatchedIdsLoading(false));
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, matrixQuery, matrixCategoryId]);
+  }, [isAdmin, productQuery, productCategoryId]);
 
-  async function runGroupAction(key: string, fn: () => Promise<void>) {
-    if (groupBusy) return;
-    setGroupBusy(key);
-    setGroupsError(null);
-    try {
-      await fn();
-      await reloadGroups();
-    } catch (err: unknown) {
-      setGroupsError(err instanceof Error ? err.message : "Операция не выполнена");
-    } finally {
-      setGroupBusy(null);
-    }
+  function refreshCurrentPage() {
+    setProductOffset(0);
+    void loadProducts(false);
   }
 
-  async function moveGroup(id: string, direction: "up" | "down") {
-    const sorted = [...priceGroups].sort((a, b) => a.sort_order - b.sort_order);
-    const idx = sorted.findIndex((g) => g.id === id);
-    if (idx < 0) return;
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+  const allLoadedSelected = products.length > 0 && products.every((p) => selectedIds.has(p.product_id));
+  const allMatchedSelected =
+    matchedIds.length > 0 && matchedIds.every((id) => selectedIds.has(id));
 
-    const reordered = [...sorted];
-    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
-    const items = reordered.map((g, i) => ({ id: g.id, sort_order: i }));
-
-    await runGroupAction(`move-${id}`, async () => {
-      await reorderPriceGroups(items);
-    });
-  }
-
-  function getCellDisplay(row: PricingMatrixRow, groupId: string): string {
-    const key = cellKey(row.product_id, groupId);
-    if (resetKeys.has(key)) return "";
-    if (edits.has(key)) return edits.get(key) ?? "";
-    const explicit = row.group_prices[groupId];
-    return explicit != null ? String(explicit) : "";
-  }
-
-  function setCellValue(productId: string, groupId: string, value: string) {
-    const key = cellKey(productId, groupId);
-    setResetKeys((prev) => {
-      if (!prev.has(key)) return prev;
+  function toggleProductSelection(id: string) {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.delete(key);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
-    setEdits((prev) => {
-      const next = new Map(prev);
-      next.set(key, value);
-      return next;
-    });
-    setSaveOk(false);
+    setBulkPricingOk(null);
   }
 
-  function markCellReset(productId: string, groupId: string) {
-    const key = cellKey(productId, groupId);
-    setResetKeys((prev) => new Set(prev).add(key));
-    setEdits((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-    setSaveOk(false);
-  }
-
-  function cancelCellReset(productId: string, groupId: string) {
-    const key = cellKey(productId, groupId);
-    setResetKeys((prev) => {
-      if (!prev.has(key)) return prev;
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-    setSaveOk(false);
-  }
-
-  function isCellDirty(productId: string, groupId: string): boolean {
-    const key = cellKey(productId, groupId);
-    if (resetKeys.has(key)) return true;
-    if (!edits.has(key)) return false;
-    const value = edits.get(key) ?? "";
-    const original = originalPrices.get(key);
-    const trimmed = value.trim();
-    if (trimmed === "") return false; // empty = keep
-    const num = Number(trimmed);
-    return Number.isFinite(num) && num !== original;
-  }
-
-  async function handleSaveMatrix() {
-    if (saveBusy || dirtyCount === 0) return;
-    setSaveBusy(true);
-    setSaveError(null);
-    setSaveOk(false);
-
-    const payload: Array<{ product_id: string; price_group_id: string; price: number | null }> =
-      [];
-
-    for (const key of resetKeys) {
-      const [productId, groupId] = key.split(":");
-      payload.push({
-        product_id: productId,
-        price_group_id: groupId,
-        price: null,
-      });
-    }
-
-    for (const [key, value] of edits) {
-      if (resetKeys.has(key)) continue;
-      const [productId, groupId] = key.split(":");
-      const original = originalPrices.get(key);
-      const trimmed = value.trim();
-
-      // Empty field = keep current override (never accidental delete via Backspace).
-      if (trimmed === "") continue;
-
-      const num = Number(trimmed);
-      if (!Number.isFinite(num) || num < 0) {
-        setSaveError("Проверьте введённые цены — допустимы только неотрицательные числа");
-        setSaveBusy(false);
-        return;
+  function toggleSelectAllLoaded() {
+    setSelectedIds((prev) => {
+      if (products.length > 0 && products.every((p) => prev.has(p.product_id))) {
+        return new Set();
       }
-      if (num !== original) {
-        payload.push({
-          product_id: productId,
-          price_group_id: groupId,
-          price: num,
-        });
-      }
-    }
+      return new Set(products.map((p) => p.product_id));
+    });
+    setBulkPricingOk(null);
+  }
 
-    if (payload.length === 0) {
-      setSaveBusy(false);
-      return;
-    }
+  function selectAllMatched() {
+    setSelectedIds(new Set(matchedIds));
+    setBulkPricingOk(null);
+  }
 
-    try {
-      await batchUpsertProductGroupPrices(payload);
-      setSaveOk(true);
-      setMatrixOffset(0);
-      await loadMatrix(false);
-    } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : "Не удалось сохранить цены");
-    } finally {
-      setSaveBusy(false);
-    }
+  function clearSelection() {
+    setSelectedIds(new Set());
   }
 
   if (profile && !isAdmin) {
@@ -380,192 +283,20 @@ export default function StaffPricingSettingsPage() {
     <div className="mx-auto max-w-6xl pb-16">
       <h1 className="text-2xl font-bold text-neutral-800">Настройки</h1>
       <p className="mt-1 text-sm text-neutral-500">
-        Обычно три активные категории (например Розница / Опт / Дилер) + спеццены на карточке
-        клиента. Массовое задание цен — на странице товаров.
+        Цена определяется так: розничная цена → скидка от количества / индивидуальная цена
+        клиента (что выгоднее) → ручная цена менеджера в заказе.
       </p>
 
       <SettingsNav active="pricing" />
 
-      {/* Price groups */}
+      {/* Retail prices + quantity tiers */}
       <section className="mt-8 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-neutral-800">Ценовые категории</h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              Переименование, порядок и группа по умолчанию. Нельзя архивировать default, пока не
-              назначена другая.
-            </p>
-          </div>
-          <button
-            type="button"
-            className={btnPrimary}
-            disabled={!!groupBusy}
-            onClick={() => setCreateOpen(true)}
-          >
-            Добавить группу
-          </button>
-        </div>
-
-        {groupsError && (
-          <p className="text-sm text-red-600" role="alert">
-            {groupsError}
-          </p>
-        )}
-
-        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Название</th>
-                  <th className="px-4 py-3 font-medium">Код</th>
-                  <th className="px-4 py-3 font-medium">Порядок</th>
-                  <th className="px-4 py-3 font-medium">Статус</th>
-                  <th className="px-4 py-3 font-medium">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupsLoading ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-neutral-500">
-                      Загрузка...
-                    </td>
-                  </tr>
-                ) : sortedGroups.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-neutral-500">
-                      Группы не найдены
-                    </td>
-                  </tr>
-                ) : (
-                  sortedGroups.map((group, index) => (
-                    <tr key={group.id} className="border-t border-neutral-100">
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`font-medium ${
-                              group.is_active ? "text-neutral-800" : "text-neutral-400"
-                            }`}
-                          >
-                            {group.name}
-                          </span>
-                          {group.is_default && (
-                            <span className="rounded bg-[#0F766E]/10 px-2 py-0.5 text-xs font-medium text-[#0F766E]">
-                              По умолчанию
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-neutral-600">
-                        {group.code || "—"}
-                      </td>
-                      <td className="px-4 py-3 tabular-nums text-neutral-600">
-                        {group.sort_order}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${
-                            group.is_active
-                              ? "bg-[#0F766E]/10 text-[#0F766E]"
-                              : "bg-neutral-200 text-neutral-600"
-                          }`}
-                        >
-                          {group.is_active ? "Активна" : "Архив"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            className={btnSecondary}
-                            disabled={!!groupBusy}
-                            onClick={() => setEditGroup(group)}
-                          >
-                            Изменить
-                          </button>
-                          {!group.is_default && group.is_active && (
-                            <button
-                              type="button"
-                              className={btnSecondary}
-                              disabled={!!groupBusy}
-                              onClick={() =>
-                                void runGroupAction(`default-${group.id}`, async () => {
-                                  await setDefaultPriceGroup(group.id);
-                                })
-                              }
-                            >
-                              По умолчанию
-                            </button>
-                          )}
-                          {group.is_active ? (
-                            <button
-                              type="button"
-                              className={`${btnSecondary} text-red-600 hover:border-red-300`}
-                              disabled={!!groupBusy || group.is_default}
-                              title={
-                                group.is_default
-                                  ? "Нельзя архивировать группу по умолчанию"
-                                  : undefined
-                              }
-                              onClick={() =>
-                                void runGroupAction(`archive-${group.id}`, async () => {
-                                  await archivePriceGroup(group.id);
-                                })
-                              }
-                            >
-                              Архив
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className={btnSecondary}
-                              disabled={!!groupBusy}
-                              onClick={() =>
-                                void runGroupAction(`restore-${group.id}`, async () => {
-                                  await restorePriceGroup(group.id);
-                                })
-                              }
-                            >
-                              Восстановить
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className={btnSecondary}
-                            disabled={!!groupBusy || index === 0}
-                            onClick={() => void moveGroup(group.id, "up")}
-                            aria-label="Выше"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            className={btnSecondary}
-                            disabled={!!groupBusy || index === sortedGroups.length - 1}
-                            onClick={() => void moveGroup(group.id, "down")}
-                            aria-label="Ниже"
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing matrix */}
-      <section className="mt-12 space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-neutral-800">Матрица цен</h2>
+          <h2 className="text-lg font-semibold text-neutral-800">Цены</h2>
           <p className="mt-1 text-sm text-neutral-500">
-            Активные категории как колонки. Пустое поле = не менять. Сброс override — только
-            кнопкой «Сбросить» (Backspace сам по себе ничего не удаляет). Массовый выбор товаров —
-            /staff/products → «Задать цены».
+            Розничная цена товара и скидки от количества. Индивидуальные цены конкретных
+            клиентов настраиваются на карточке клиента. Отметьте товары ниже, чтобы изменить
+            цены сразу у нескольких.
           </p>
         </div>
 
@@ -574,8 +305,8 @@ export default function StaffPricingSettingsPage() {
             Поиск
             <input
               className={inputClass}
-              value={matrixQuery}
-              onChange={(e) => setMatrixQuery(e.target.value)}
+              value={productQuery}
+              onChange={(e) => setProductQuery(e.target.value)}
               placeholder="SKU или название"
             />
           </label>
@@ -583,8 +314,8 @@ export default function StaffPricingSettingsPage() {
             Категория
             <select
               className={inputClass}
-              value={matrixCategoryId}
-              onChange={(e) => setMatrixCategoryId(e.target.value)}
+              value={productCategoryId}
+              onChange={(e) => setProductCategoryId(e.target.value)}
             >
               <option value="">Все категории</option>
               {categories.map((cat) => (
@@ -596,37 +327,51 @@ export default function StaffPricingSettingsPage() {
           </label>
         </div>
 
-        {matrixError && (
+        {productsError && (
           <p className="text-sm text-red-600" role="alert">
-            {matrixError}
+            {productsError}
           </p>
         )}
 
-        {dirtyCount > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-sm text-amber-900">
-              Несохранённых изменений: {dirtyCount}
+        {!productsLoading && (
+          <p className="text-xs text-neutral-500">
+            {matchedIdsLoading
+              ? "Подсчёт найденных товаров..."
+              : `Найдено товаров: ${matchedIds.length}`}
+          </p>
+        )}
+
+        {bulkPricingOk && (
+          <p
+            className="rounded-md border border-[#0F766E]/20 bg-[#0F766E]/5 px-4 py-3 text-sm text-[#0F766E]"
+            role="status"
+          >
+            {bulkPricingOk}
+          </p>
+        )}
+
+        {selectedIds.size > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#0F766E]/30 bg-[#0F766E]/5 px-4 py-3">
+            <p className="text-sm text-neutral-700">
+              Выбрано: <span className="font-semibold">{selectedIds.size}</span> товаров
             </p>
-            <button
-              type="button"
-              className={btnPrimary}
-              disabled={saveBusy}
-              onClick={() => void handleSaveMatrix()}
-            >
-              {saveBusy ? "Сохранение..." : "Сохранить изменения"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={clearSelection}
+                className={`rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 ${focusRing}`}
+              >
+                Снять выбор
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkPricingModalOpen(true)}
+                className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+              >
+                Изменить цены
+              </button>
+            </div>
           </div>
-        )}
-
-        {saveError && (
-          <p className="text-sm text-red-600" role="alert">
-            {saveError}
-          </p>
-        )}
-        {saveOk && (
-          <p className="text-sm text-[#0F766E]" role="status">
-            Цены сохранены
-          </p>
         )}
 
         <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
@@ -634,107 +379,79 @@ export default function StaffPricingSettingsPage() {
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
                 <tr>
+                  <th className="px-3 py-3 font-medium">
+                    <input
+                      type="checkbox"
+                      className="accent-[#0F766E]"
+                      checked={allLoadedSelected}
+                      onChange={toggleSelectAllLoaded}
+                      disabled={products.length === 0}
+                      aria-label="Выбрать все на странице"
+                      title="Выбрать все на странице"
+                    />
+                  </th>
                   <th className="min-w-[220px] px-3 py-3 font-medium">Товар</th>
-                  <th className="min-w-[100px] px-3 py-3 font-medium">Базовая</th>
-                  {activeGroups.map((group) => (
-                    <th key={group.id} className="min-w-[120px] px-3 py-3 font-medium">
-                      <div>{group.name}</div>
-                      {group.code && (
-                        <div className="mt-0.5 font-mono text-[10px] normal-case text-neutral-400">
-                          {group.code}
-                        </div>
-                      )}
-                    </th>
-                  ))}
+                  <th className="min-w-[110px] px-3 py-3 font-medium">Розничная цена</th>
+                  <th className="min-w-[260px] px-3 py-3 font-medium">Скидки от количества</th>
+                  <th className="px-3 py-3 font-medium" />
                 </tr>
               </thead>
               <tbody>
-                {matrixLoading ? (
+                {productsLoading ? (
                   <tr>
-                    <td
-                      colSpan={2 + activeGroups.length}
-                      className="px-4 py-10 text-center text-neutral-500"
-                    >
+                    <td colSpan={5} className="px-4 py-10 text-center text-neutral-500">
                       Загрузка...
                     </td>
                   </tr>
-                ) : matrixRows.length === 0 ? (
+                ) : products.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={2 + activeGroups.length}
-                      className="px-4 py-10 text-center text-neutral-500"
-                    >
+                    <td colSpan={5} className="px-4 py-10 text-center text-neutral-500">
                       Товары не найдены
                     </td>
                   </tr>
                 ) : (
-                  matrixRows.map((row) => (
+                  products.map((row) => (
                     <tr key={row.product_id} className="border-t border-neutral-100">
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          className="accent-[#0F766E]"
+                          checked={selectedIds.has(row.product_id)}
+                          onChange={() => toggleProductSelection(row.product_id)}
+                          aria-label={`Выбрать ${row.sku}`}
+                        />
+                      </td>
+                      <td className="px-3 py-3">
                         <div className="font-medium text-neutral-800">{row.name}</div>
                         <div className="mt-0.5 font-mono text-xs text-neutral-400">
                           {row.sku}
                           {row.category_name ? ` · ${row.category_name}` : ""}
                         </div>
                       </td>
-                      <td className="px-3 py-2 tabular-nums text-neutral-700">
+                      <td className="px-3 py-3 tabular-nums text-neutral-700">
                         {row.base_price != null ? formatPrice(row.base_price) : "—"}
                       </td>
-                      {activeGroups.map((group) => {
-                        const key = cellKey(row.product_id, group.id);
-                        const hasOriginal = originalPrices.has(key);
-                        const markedReset = resetKeys.has(key);
-                        const placeholder =
-                          row.base_price != null
-                            ? `= ${formatPrice(row.base_price)}`
-                            : "базовая";
-                        const dirty = isCellDirty(row.product_id, group.id);
-                        return (
-                          <td key={group.id} className="px-3 py-2 align-top">
-                            {markedReset ? (
-                              <div className="space-y-1">
-                                <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
-                                  Сброс → базовая
-                                </p>
-                                <button
-                                  type="button"
-                                  className={`text-xs font-medium text-[#0F766E] ${focusRing}`}
-                                  onClick={() => cancelCellReset(row.product_id, group.id)}
-                                >
-                                  Отменить сброс
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="space-y-1">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  className={`w-full min-w-[100px] rounded-md border px-2 py-1.5 text-sm tabular-nums text-neutral-800 ${focusRing} ${
-                                    dirty
-                                      ? "border-amber-400 bg-amber-50"
-                                      : "border-neutral-200 bg-white"
-                                  }`}
-                                  value={getCellDisplay(row, group.id)}
-                                  placeholder={placeholder}
-                                  onChange={(e) =>
-                                    setCellValue(row.product_id, group.id, e.target.value)
-                                  }
-                                />
-                                {hasOriginal && (
-                                  <button
-                                    type="button"
-                                    className={`text-xs font-medium text-neutral-500 hover:text-red-600 ${focusRing}`}
-                                    onClick={() => markCellReset(row.product_id, group.id)}
-                                  >
-                                    Сбросить
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
+                      <td className="px-3 py-3 text-neutral-600">
+                        {formatTiersSummary(row.quantity_tiers)}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="flex flex-wrap justify-end gap-3">
+                          <button
+                            type="button"
+                            className={`text-xs font-medium text-[#0F766E] hover:underline ${focusRing}`}
+                            onClick={() => setEditPriceProduct(row)}
+                          >
+                            Изменить розничную цену
+                          </button>
+                          <button
+                            type="button"
+                            className={`text-xs font-medium text-[#0F766E] hover:underline ${focusRing}`}
+                            onClick={() => setTiersModalProduct(row)}
+                          >
+                            Настроить количество
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -743,65 +460,152 @@ export default function StaffPricingSettingsPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {matrixHasMore && (
+        {!productsLoading && products.length > 0 && matchedIds.length > products.length && (
+          <p className="text-xs text-neutral-500">
+            На экране {products.length} из {matchedIds.length} найденных.{" "}
             <button
               type="button"
-              className={btnSecondary}
-              disabled={matrixLoadingMore || matrixLoading}
-              onClick={() => void loadMatrix(true)}
+              onClick={selectAllMatched}
+              disabled={matchedIdsLoading}
+              className={`font-medium text-[#0F766E] hover:underline disabled:opacity-50 ${focusRing}`}
             >
-              {matrixLoadingMore ? "Загрузка..." : "Ещё"}
+              {allMatchedSelected
+                ? `Выбраны все ${matchedIds.length} найденных`
+                : `Выбрать все ${matchedIds.length} найденных товаров`}
             </button>
-          )}
-          {dirtyCount > 0 && (
-            <button
-              type="button"
-              className={btnPrimary}
-              disabled={saveBusy}
-              onClick={() => void handleSaveMatrix()}
-            >
-              {saveBusy ? "Сохранение..." : "Сохранить изменения"}
-            </button>
-          )}
-        </div>
+          </p>
+        )}
+
+        {productHasMore && (
+          <button
+            type="button"
+            className={btnSecondary}
+            disabled={productsLoadingMore || productsLoading}
+            onClick={() => void loadProducts(true)}
+          >
+            {productsLoadingMore ? "Загрузка..." : "Ещё"}
+          </button>
+        )}
       </section>
 
-      {createOpen && (
-        <PriceGroupFormModal
-          title="Новая ценовая группа"
-          initial={{ name: "", code: "" }}
-          busy={!!groupBusy}
-          onClose={() => setCreateOpen(false)}
-          onSubmit={async (values) => {
-            const maxOrder = Math.max(0, ...priceGroups.map((g) => g.sort_order));
-            await runGroupAction("create", async () => {
-              await createPriceGroup({
-                name: values.name,
-                code: values.code,
-                sort_order: maxOrder + 1,
-              });
-              setCreateOpen(false);
-            });
+      {/* Pricing guard — manager discount / margin boundary (ТЗ §21–22) */}
+      <section className="mt-12 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-neutral-800">Контроль цен менеджера</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Минимальная граница: ниже неё менеджер не может установить цену вручную — только
+            администратор. Пустое поле = проверка отключена. Точная себестоимость менеджеру не
+            показывается.
+          </p>
+        </div>
+
+        {guardLoading ? (
+          <p className="text-sm text-neutral-500">Загрузка...</p>
+        ) : (
+          <div className="max-w-xl rounded-lg border border-neutral-200 bg-white p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm text-neutral-600">
+                Макс. скидка менеджера, %
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.1"
+                  className={inputClass}
+                  value={guardDiscountInput}
+                  onChange={(e) => setGuardDiscountInput(e.target.value)}
+                  placeholder="не ограничено"
+                  disabled={guardSaving}
+                />
+              </label>
+              <label className="block text-sm text-neutral-600">
+                Мин. наценка над себестоимостью, %
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  className={inputClass}
+                  value={guardMarginInput}
+                  onChange={(e) => setGuardMarginInput(e.target.value)}
+                  placeholder="не ограничено"
+                  disabled={guardSaving}
+                />
+              </label>
+            </div>
+
+            {guardSettings?.updated_at && (
+              <p className="mt-3 text-xs text-neutral-400">
+                Обновлено {new Date(guardSettings.updated_at).toLocaleString("ru-RU")}
+              </p>
+            )}
+
+            {guardError && (
+              <p className="mt-3 text-sm text-red-600" role="alert">
+                {guardError}
+              </p>
+            )}
+            {guardSaveOk && (
+              <p className="mt-3 text-sm text-[#0F766E]" role="status">
+                Настройки сохранены
+              </p>
+            )}
+
+            <div className="mt-4">
+              <button
+                type="button"
+                className={btnPrimary}
+                disabled={guardSaving}
+                onClick={() => void handleSaveGuardSettings()}
+              >
+                {guardSaving ? "Сохранение..." : "Сохранить"}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {editPriceProduct && (
+        <RetailPriceModal
+          product={editPriceProduct}
+          onClose={() => setEditPriceProduct(null)}
+          onSaved={() => {
+            setEditPriceProduct(null);
+            refreshCurrentPage();
           }}
         />
       )}
 
-      {editGroup && (
-        <PriceGroupFormModal
-          title="Редактирование группы"
-          initial={{ name: editGroup.name, code: editGroup.code }}
-          busy={!!groupBusy}
-          onClose={() => setEditGroup(null)}
-          onSubmit={async (values) => {
-            await runGroupAction(`edit-${editGroup.id}`, async () => {
-              await updatePriceGroup({
-                id: editGroup.id,
-                name: values.name,
-                code: values.code,
-              });
-              setEditGroup(null);
-            });
+      {tiersModalProduct && (
+        <ProductQuantityTiersModal
+          productId={tiersModalProduct.product_id}
+          productName={tiersModalProduct.name}
+          basePrice={tiersModalProduct.base_price}
+          onClose={() => {
+            setTiersModalProduct(null);
+            refreshCurrentPage();
+          }}
+        />
+      )}
+
+      {bulkPricingModalOpen && (
+        <StaffBulkSetPricesModal
+          productIds={[...selectedIds]}
+          onClose={() => setBulkPricingModalOpen(false)}
+          onApplied={(summary) => {
+            setBulkPricingModalOpen(false);
+            const parts: string[] = [];
+            if (summary.base_price_changed) {
+              parts.push(`Розничная цена: ${summary.updated_products}`);
+            }
+            if (summary.tiers_changed) {
+              parts.push(`Уровни количества: ${summary.updated_products} товаров`);
+            }
+            setBulkPricingOk(
+              `Цены обновлены для ${summary.updated_products} товаров` +
+                (parts.length > 0 ? ` (${parts.join(" · ")})` : ""),
+            );
+            setSelectedIds(new Set());
+            refreshCurrentPage();
           }}
         />
       )}
@@ -809,42 +613,44 @@ export default function StaffPricingSettingsPage() {
   );
 }
 
-function PriceGroupFormModal({
-  title,
-  initial,
-  busy,
+function RetailPriceModal({
+  product,
   onClose,
-  onSubmit,
+  onSaved,
 }: {
-  title: string;
-  initial: { name: string; code: string };
-  busy: boolean;
+  product: ProductPricingOverviewRow;
   onClose: () => void;
-  onSubmit: (values: { name: string; code: string }) => Promise<void>;
+  onSaved: () => void;
 }) {
-  const titleId = useId();
-  const [name, setName] = useState(initial.name);
-  const [code, setCode] = useState(initial.code);
+  const [price, setPrice] = useState(product.base_price != null ? String(product.base_price) : "");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(event: FormEvent) {
+  const parsed = useMemo(() => {
+    const trimmed = price.trim().replace(",", ".");
+    if (!trimmed) return null;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : null;
+  }, [price]);
+
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const trimmedName = name.trim();
-    const trimmedCode = code.trim();
-    if (!trimmedName) {
-      setError("Укажите название");
+    if (parsed == null || parsed < 0) {
+      setError("Укажите неотрицательное число");
       return;
     }
-    if (!trimmedCode) {
-      setError("Укажите код");
-      return;
-    }
+    setBusy(true);
     setError(null);
     try {
-      await onSubmit({ name: trimmedName, code: trimmedCode });
+      await bulkUpdateProductPrices([product.product_id], {
+        base: { action: "set", price: parsed },
+      });
+      onSaved();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Не удалось сохранить");
+      setError(err instanceof Error ? err.message : "Не удалось сохранить цену");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -853,37 +659,25 @@ function PriceGroupFormModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby={titleId}
       onClick={onClose}
     >
       <form
-        className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-5 shadow-lg"
+        className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-5 shadow-lg"
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => void handleSubmit(e)}
       >
-        <h2 id={titleId} className="text-lg font-semibold text-neutral-800">
-          {title}
-        </h2>
+        <h2 className="text-lg font-semibold text-neutral-800">Розничная цена</h2>
+        <p className="mt-0.5 text-sm text-neutral-500">{product.name}</p>
 
         <label className="mt-4 block text-sm text-neutral-600">
-          Название *
+          Цена *
           <input
             className={inputClass}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            inputMode="decimal"
             required
             disabled={busy}
-          />
-        </label>
-        <label className="mt-3 block text-sm text-neutral-600">
-          Код *
-          <input
-            className={inputClass}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            required
-            disabled={busy}
-            placeholder="например retail"
           />
         </label>
 

@@ -46,6 +46,10 @@ interface CartContextValue {
   items: CartItem[];
   totalQuantity: number;
   totalAmount: number;
+  /** Sum of listPrice × quantity (falls back to salePrice per-line when listPrice is unknown). */
+  totalListAmount: number;
+  /** totalListAmount − totalAmount, floored at 0 — "Ваша выгода" (ТЗ §17–18). */
+  totalSavings: number;
   hasUnpricedItems: boolean;
   addToCart: (product: Product, quantity: number) => void;
   addManyToCart: (entries: CartBulkEntry[]) => void;
@@ -82,6 +86,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           }
           if (
             fresh.salePrice === item.product.salePrice
+            && fresh.listPrice === item.product.listPrice
             && fresh.stock === item.product.stock
           ) {
             return item;
@@ -92,6 +97,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             product: {
               ...item.product,
               salePrice: fresh.salePrice,
+              listPrice: fresh.listPrice,
               stock: fresh.stock,
             },
           };
@@ -232,11 +238,30 @@ export function CartProvider({ children }: { children: ReactNode }) {
     [items],
   );
 
+  const totalListAmount = useMemo(
+    () =>
+      items.reduce((sum, item) => {
+        const reference = item.product.listPrice ?? item.product.salePrice;
+        if (reference === null) {
+          return sum;
+        }
+        return sum + reference * item.quantity;
+      }, 0),
+    [items],
+  );
+
+  const totalSavings = useMemo(
+    () => Math.max(0, Math.round((totalListAmount - totalAmount) * 100) / 100),
+    [totalListAmount, totalAmount],
+  );
+
   const value = useMemo<CartContextValue>(
     () => ({
       items,
       totalQuantity,
       totalAmount,
+      totalListAmount,
+      totalSavings,
       hasUnpricedItems,
       addToCart,
       addManyToCart,
@@ -250,6 +275,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       items,
       totalQuantity,
       totalAmount,
+      totalListAmount,
+      totalSavings,
       hasUnpricedItems,
       addToCart,
       addManyToCart,

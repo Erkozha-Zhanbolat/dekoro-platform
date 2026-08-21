@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/lib/formatPrice";
+import { computeDiscountPercent } from "@/lib/pricing";
 import { getAvailableStock } from "@/lib/inventory";
 import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
@@ -32,6 +33,7 @@ export default function ProductCard({ product }: { product: Product }) {
   const [quantity, setQuantity] = useState(1);
   const selectedQuantity = Math.min(quantity, maxSelectable);
   const isAtCapacity = !isSelectionDisabled && selectedQuantity >= remainingCapacity;
+  const discountPercent = computeDiscountPercent(product.listPrice, product.salePrice);
 
   function handleQuantityChange(value: number) {
     setQuantity(Math.min(Math.max(value, 1), maxSelectable));
@@ -83,17 +85,32 @@ export default function ProductCard({ product }: { product: Product }) {
         </p>
       )}
 
-      <div className="mt-3 flex items-baseline gap-1">
+      <div className="mt-3">
         {product.salePrice === null ? (
           <span className="text-sm font-medium text-neutral-500">
             Цена по запросу
           </span>
         ) : (
           <>
-            <span className="text-lg font-bold text-neutral-800">
-              {formatPrice(product.salePrice)}
-            </span>
-            <span className="text-xs text-neutral-500">/ {product.unit}</span>
+            {discountPercent != null && product.listPrice != null && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-neutral-400 line-through">
+                  {formatPrice(product.listPrice)}
+                </span>
+                <span className="rounded-full bg-[#0F766E]/10 px-1.5 py-0.5 text-[11px] font-medium text-[#0F766E]">
+                  −{discountPercent}%
+                </span>
+              </div>
+            )}
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-bold text-neutral-800">
+                {formatPrice(product.salePrice)}
+              </span>
+              <span className="text-xs text-neutral-500">/ {product.unit}</span>
+            </div>
+            {discountPercent != null && (
+              <span className="text-xs font-medium text-[#0F766E]">Ваша цена</span>
+            )}
           </>
         )}
       </div>

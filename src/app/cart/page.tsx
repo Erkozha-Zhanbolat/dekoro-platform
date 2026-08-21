@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatPrice } from "@/lib/formatPrice";
+import { computeDiscountPercent } from "@/lib/pricing";
 import { getAvailableStock } from "@/lib/inventory";
 import { QuantitySelector } from "@/components/QuantitySelector";
 
@@ -18,8 +19,15 @@ const REPEAT_NOTICE_KEY = "dekoro_repeat_order_notice";
 export default function CartPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { items, totalAmount, hasUnpricedItems, setItemQuantity, removeItem } =
-    useCart();
+  const {
+    items,
+    totalAmount,
+    totalListAmount,
+    totalSavings,
+    hasUnpricedItems,
+    setItemQuantity,
+    removeItem,
+  } = useCart();
   const isEmpty = items.length === 0;
   const [repeatNotice, setRepeatNotice] = useState<string | null>(null);
 
@@ -100,10 +108,16 @@ export default function CartPage() {
                           Цена уточняется
                         </span>
                       ) : (
-                        <>
+                        <span className="inline-flex items-center gap-1.5">
+                          {computeDiscountPercent(item.product.listPrice, item.product.salePrice) != null
+                            && item.product.listPrice != null && (
+                            <span className="text-xs text-neutral-400 line-through">
+                              {formatPrice(item.product.listPrice)}
+                            </span>
+                          )}
                           {formatPrice(item.product.salePrice)} /{" "}
                           {item.product.unit}
-                        </>
+                        </span>
                       )}
                     </p>
                     {isAtCapacity && (
@@ -145,10 +159,31 @@ export default function CartPage() {
           </div>
 
           <div className="mt-8 flex flex-col items-end gap-1 border-t border-neutral-200 pt-6">
+            {totalSavings > 0 && (
+              <>
+                <div className="flex w-full max-w-xs items-center justify-between text-sm">
+                  <span className="text-neutral-500">Розничная стоимость</span>
+                  <span className="text-neutral-500 line-through">
+                    {formatPrice(totalListAmount)}
+                  </span>
+                </div>
+                <div className="flex w-full max-w-xs items-center justify-between text-sm">
+                  <span className="text-neutral-500">Ваша скидка</span>
+                  <span className="font-medium text-[#0F766E]">
+                    −{formatPrice(totalSavings)}
+                  </span>
+                </div>
+              </>
+            )}
             <span className="text-sm text-neutral-500">Итого к оплате</span>
             <span className="text-2xl font-bold text-neutral-800">
               {formatPrice(totalAmount)}
             </span>
+            {totalSavings > 0 && (
+              <span className="rounded-md bg-[#0F766E]/10 px-3 py-1.5 text-sm font-medium text-[#0F766E]">
+                Ваша выгода — {formatPrice(totalSavings)}
+              </span>
+            )}
             {hasUnpricedItems && (
               <span className="text-xs text-neutral-400">
                 Сумма рассчитана без учёта товаров с уточняемой ценой

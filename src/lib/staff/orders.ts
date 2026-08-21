@@ -1,8 +1,12 @@
 import { supabase } from "@/lib/supabase/client";
 import type {
+  CustomerProductPriceHistoryEntry,
   DeliveryType,
+  ItemPricePreview,
+  ManualPriceReason,
   OrderActivityEventType,
   OrderStatus,
+  PriceSource,
   StaffCreateOrderResult,
   StaffOrderMutationResult,
 } from "@/types/database";
@@ -168,6 +172,17 @@ export type StaffOrderDetailItem = {
   quantity: number;
   unit_price: number;
   total: number;
+  // Price snapshot / manager-override fields (041_order_pricing_engine.sql).
+  // Nullable for pre-041 order_items rows.
+  list_price: number | null;
+  auto_price: number | null;
+  price_source: PriceSource | null;
+  quantity_tier_min_quantity: number | null;
+  is_manual_price: boolean;
+  manual_price_reason: ManualPriceReason | null;
+  manual_price_comment: string | null;
+  price_overridden_by: string | null;
+  price_overridden_at: string | null;
 };
 
 export type StaffOrderStatusHistoryItem = {
@@ -249,14 +264,14 @@ type StaffOrderDetailRow = {
   assigned_manager_id: string | null;
   payment_due_at: string | null;
   reservation_expires_at: string | null;
-  order_items: StaffOrderDetailItem[] | null;
+  order_items: Record<string, unknown>[] | null;
 };
 
 export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | null> {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, updated_at, status, subtotal, discount, total, comment, customer_id, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, assigned_manager_id, payment_due_at, reservation_expires_at, order_items(id, product_id, product_name, quantity, unit_price, total:line_total)",
+      "id, order_number, created_at, updated_at, status, subtotal, discount, total, comment, customer_id, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, assigned_manager_id, payment_due_at, reservation_expires_at, order_items(id, product_id, product_name, quantity, unit_price, total:line_total, list_price, auto_price, price_source, quantity_tier_min_quantity, is_manual_price, manual_price_reason, manual_price_comment, price_overridden_by, price_overridden_at)",
     )
     .eq("id", id)
     .single();
@@ -308,12 +323,22 @@ export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | 
     payment_due_at: row.payment_due_at,
     reservation_expires_at: row.reservation_expires_at,
     items: items.map((item) => ({
-      id: item.id,
-      product_id: item.product_id,
-      product_name: item.product_name,
-      quantity: item.quantity,
+      id: String(item.id),
+      product_id: String(item.product_id),
+      product_name: String(item.product_name),
+      quantity: Number(item.quantity),
       unit_price: Number(item.unit_price),
       total: Number(item.total),
+      list_price: item.list_price == null ? null : Number(item.list_price),
+      auto_price: item.auto_price == null ? null : Number(item.auto_price),
+      price_source: (item.price_source as PriceSource | null) ?? null,
+      quantity_tier_min_quantity:
+        item.quantity_tier_min_quantity == null ? null : Number(item.quantity_tier_min_quantity),
+      is_manual_price: Boolean(item.is_manual_price),
+      manual_price_reason: (item.manual_price_reason as ManualPriceReason | null) ?? null,
+      manual_price_comment: (item.manual_price_comment as string | null) ?? null,
+      price_overridden_by: (item.price_overridden_by as string | null) ?? null,
+      price_overridden_at: (item.price_overridden_at as string | null) ?? null,
     })),
     statusHistory: history,
     activityLog: activity,
@@ -501,6 +526,85 @@ export async function updateStaffOrderItemQuantity(
   if (error) {
     throw new Error(error.message || "Не удалось изменить количество");
   }
+  return data as StaffOrderMutationResult;
+}
+
+// ============================================================
+// Manager price override (041_order_pricing_engine.sql, ТЗ §9–12, §14, §25).
+// ============================================================
+
+/** Preview the automatic (non-manual) price for a product/customer/quantity. */
+export async function previewStaffItemPrice(
+  productId: string,
+  customerId: string | null,
+  quantity: number,
+): Promise<ItemPricePreview> {
+  const { data, error } = await supabase.rpc("staff_preview_item_price", {
+    p_product_id: productId,
+    p_customer_id: customerId,
+    p_quantity: quantity,
+  });
+  if (error) throw new Error(error.message || "Не удалось рассчитать цену");
+  const [row] = (data as Record<string, unknown>[] | null) ?? [];
+  return {
+    list_price: row?.list_price == null ? null : Number(row.list_price),
+    resolved_price: row?.resolved_price == null ? null : Number(row.resolved_price),
+    resolved_source: (row?.resolved_source as PriceSource | null) ?? null,
+    tier_min_quantity: row?.tier_min_quantity == null ? null : Number(row.tier_min_quantity),
+  };
+}
+
+/** Last (non-cancelled) purchase prices of a product for a customer — a hint, not a rule. */
+export async function getCustomerProductPriceHistory(
+  customerId: string,
+  productId: string,
+  limit = 3,
+): Promise<CustomerProductPriceHistoryEntry[]> {
+  const { data, error } = await supabase.rpc("staff_get_customer_product_price_history", {
+    p_customer_id: customerId,
+    p_product_id: productId,
+    p_limit: limit,
+  });
+  if (error) throw new Error(error.message || "Не удалось загрузить историю цен клиента");
+  return ((data as Record<string, unknown>[] | null) ?? []).map((row) => ({
+    order_id: String(row.order_id),
+    order_number: String(row.order_number),
+    unit_price: Number(row.unit_price),
+    quantity: Number(row.quantity),
+    status: row.status as OrderStatus,
+    ordered_at: String(row.ordered_at),
+  }));
+}
+
+/**
+ * Manager/admin sets a manual price for one order item, for this order only
+ * (never touches customer_product_prices — see "Сохранить как
+ * индивидуальную цену клиента" as a separate, explicit admin action).
+ */
+export async function setStaffOrderItemPrice(input: {
+  orderItemId: string;
+  newPrice: number;
+  reason: ManualPriceReason;
+  comment?: string | null;
+}): Promise<StaffOrderMutationResult> {
+  const { data, error } = await supabase.rpc("staff_set_order_item_price", {
+    p_order_item_id: input.orderItemId,
+    p_new_price: input.newPrice,
+    p_reason: input.reason,
+    p_comment: input.comment ?? null,
+  });
+  if (error) throw new Error(error.message || "Не удалось изменить цену");
+  return data as StaffOrderMutationResult;
+}
+
+/** Reset a manual override back to the automatic price at the item's current quantity. */
+export async function resetStaffOrderItemPrice(
+  orderItemId: string,
+): Promise<StaffOrderMutationResult> {
+  const { data, error } = await supabase.rpc("staff_reset_order_item_price", {
+    p_order_item_id: orderItemId,
+  });
+  if (error) throw new Error(error.message || "Не удалось сбросить ручную цену");
   return data as StaffOrderMutationResult;
 }
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useProfile } from "@/context/ProfileContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { getStaffCustomer, listStaffCustomerOrders } from "@/lib/staff/customers";
@@ -12,13 +12,11 @@ import { getStaffCustomerReceivables } from "@/lib/staff/payments";
 import {
   deleteCustomerProductPrice,
   listCustomerProductPrices,
-  listStaffPriceGroups,
-  setCustomerPriceGroup,
   upsertCustomerProductPrice,
 } from "@/lib/staff/pricing";
 import { searchStaffProducts } from "@/lib/staff/inventory";
 import type { StaffProductSearchResult } from "@/lib/staff/inventory";
-import type { CustomerProductPriceRow, PriceGroup, StaffCustomerReceivables } from "@/types/database";
+import type { CustomerProductPriceRow, StaffCustomerReceivables } from "@/types/database";
 import {
   CUSTOMER_SOURCE_LABELS,
   CUSTOMER_TYPE_LABELS,
@@ -83,11 +81,6 @@ export default function StaffCustomerDetailPage() {
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<"info" | "activity">("info");
 
-  const [priceGroups, setPriceGroups] = useState<PriceGroup[]>([]);
-  const [selectedPriceGroupId, setSelectedPriceGroupId] = useState("");
-  const [priceGroupSaving, setPriceGroupSaving] = useState(false);
-  const [priceGroupError, setPriceGroupError] = useState<string | null>(null);
-
   const [individualPrices, setIndividualPrices] = useState<CustomerProductPriceRow[]>([]);
   const [individualPricesError, setIndividualPricesError] = useState<string | null>(null);
   const [individualPriceDrafts, setIndividualPriceDrafts] = useState<Record<string, string>>({});
@@ -105,6 +98,8 @@ export default function StaffCustomerDetailPage() {
   const [addIndividualPrice, setAddIndividualPrice] = useState("");
   const [addIndividualBusy, setAddIndividualBusy] = useState(false);
   const [addIndividualError, setAddIndividualError] = useState<string | null>(null);
+
+  const individualPricesSectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!customerId || profile?.role === "warehouse") {
@@ -127,7 +122,6 @@ export default function StaffCustomerDetailPage() {
           setCustomer(customerResult);
           setOrders(ordersResult);
           setLoadError(null);
-          setSelectedPriceGroupId(customerResult.price_group_id ?? "");
 
           getStaffCustomerReceivables(customerId)
             .then((recv) => {
@@ -197,14 +191,12 @@ export default function StaffCustomerDetailPage() {
 
     let ignore = false;
 
-    Promise.all([listStaffPriceGroups(false), listCustomerProductPrices(customerId)])
-      .then(([groups, prices]) => {
+    listCustomerProductPrices(customerId)
+      .then((prices) => {
         if (ignore) return;
-        setPriceGroups(groups);
         setIndividualPrices(prices);
         syncIndividualPriceDrafts(prices);
         setIndividualPricesError(null);
-        setPriceGroupError(null);
       })
       .catch((error: unknown) => {
         if (ignore) return;
@@ -246,27 +238,6 @@ export default function StaffCustomerDetailPage() {
   }, [canEditPricing, customerId, debouncedAddProductSearch, addProductSearchedTerm]);
 
   const addProductSearchLoading = addProductSearchedTerm !== debouncedAddProductSearch;
-
-  async function handleSavePriceGroup() {
-    if (!customer || !canEditPricing || priceGroupSaving || !selectedPriceGroupId) return;
-
-    setPriceGroupSaving(true);
-    setPriceGroupError(null);
-
-    try {
-      await setCustomerPriceGroup(customer.id, selectedPriceGroupId);
-      const refreshed = await getStaffCustomer(customer.id);
-      if (refreshed) {
-        setCustomer(refreshed);
-        setSelectedPriceGroupId(refreshed.price_group_id ?? selectedPriceGroupId);
-      }
-      await refreshIndividualPrices();
-    } catch (error: unknown) {
-      setPriceGroupError(error instanceof Error ? error.message : "Не удалось сохранить группу");
-    } finally {
-      setPriceGroupSaving(false);
-    }
-  }
 
   async function handleSaveIndividualPrice(productId: string) {
     if (!customer || !canEditPricing || savingIndividualProductId) return;
@@ -555,56 +526,38 @@ export default function StaffCustomerDetailPage() {
       </div>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-neutral-800">Ценовая категория</h2>
-        {canEditPricing ? (
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-                Группа
-              </span>
-              <select
-                value={selectedPriceGroupId}
-                onChange={(event) => setSelectedPriceGroupId(event.target.value)}
-                className={inputClass}
-              >
-                <option value="">Выберите группу</option>
-                {priceGroups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                    {group.is_default ? " (по умолчанию)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={
-                priceGroupSaving ||
-                !selectedPriceGroupId ||
-                selectedPriceGroupId === (customer.price_group_id ?? "")
-              }
-              onClick={() => {
-                handleSavePriceGroup().catch(() => undefined);
-              }}
-              className={`rounded-md bg-[#0F766E] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] disabled:bg-neutral-300 ${focusRing}`}
-            >
-              {priceGroupSaving ? "Сохранение..." : "Сохранить"}
-            </button>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-neutral-800">
-            {customer.price_group_name ?? "—"}
-            {customer.price_group_is_default ? " (по умолчанию)" : ""}
-          </p>
-        )}
-        {priceGroupError && (
-          <p className="mt-3 text-sm text-red-600" role="alert">
-            {priceGroupError}
-          </p>
+        <h2 className="text-lg font-semibold text-neutral-800">Индивидуальные цены</h2>
+        <p className="mt-2 text-sm text-neutral-800">
+          {individualPrices.length === 0
+            ? "Нет товаров с индивидуальными условиями"
+            : `${individualPrices.length} ${
+                individualPrices.length === 1
+                  ? "товар имеет"
+                  : individualPrices.length < 5
+                    ? "товара имеют"
+                    : "товаров имеют"
+              } индивидуальные условия`}
+        </p>
+        {canEditPricing && (
+          <button
+            type="button"
+            onClick={() =>
+              individualPricesSectionRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              })
+            }
+            className={`mt-3 text-sm font-medium text-[#0F766E] hover:underline ${focusRing}`}
+          >
+            Настроить индивидуальные цены
+          </button>
         )}
       </section>
 
-      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+      <section
+        ref={individualPricesSectionRef}
+        className="rounded-lg border border-neutral-200 bg-white p-5"
+      >
         <h2 className="text-lg font-semibold text-neutral-800">Индивидуальные спеццены</h2>
         <p className="mt-1 text-sm text-neutral-500">
           Переопределения цен для отдельных товаров. В таблице только активные индивидуальные цены.
@@ -709,7 +662,6 @@ export default function StaffCustomerDetailPage() {
                 <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
                   <th className="px-3 py-3">Товар</th>
                   <th className="px-3 py-3 text-right">Базовая</th>
-                  <th className="px-3 py-3 text-right">Цена категории</th>
                   <th className="px-3 py-3 text-right">Спеццена</th>
                   <th className="px-3 py-3 text-right">Итоговая</th>
                   {canEditPricing && <th className="px-3 py-3" />}
@@ -728,9 +680,6 @@ export default function StaffCustomerDetailPage() {
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums text-neutral-600">
                         {formatOptionalPrice(row.base_price)}
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums text-neutral-600">
-                        {formatOptionalPrice(row.group_price)}
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums text-neutral-800">
                         {canEditPricing ? (
