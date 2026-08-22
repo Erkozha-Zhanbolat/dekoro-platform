@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useProfile } from "@/context/ProfileContext";
+import FactoryCatalogMarkers from "@/components/staff/FactoryCatalogMarkers";
 import { listStaffCategories, type StaffCategoryListItem } from "@/lib/staff/products";
 import {
   addProductSupplyExpense,
@@ -991,7 +992,8 @@ function AddProductModal({
               }`}
             >
               <span className="font-medium text-neutral-800">
-                {row.sku} — {row.name}
+                {row.sku} — {row.name}{" "}
+                <FactoryCatalogMarkers catalogs={row.factory_catalogs} />
               </span>
               <span className="text-xs text-neutral-500">
                 {STAFF_PRODUCT_STATUS_LABELS[row.status as StaffProductStatus] ?? row.status}

@@ -34,6 +34,7 @@ export type StaffOrderListItem = {
   payment_due_at: string | null;
   reservation_expires_at: string | null;
   is_test: boolean;
+  exclude_from_regular_demand: boolean;
   itemCount: number;
   totalQuantity: number;
 };
@@ -52,6 +53,7 @@ type StaffOrderListRow = {
   payment_due_at: string | null;
   reservation_expires_at: string | null;
   is_test?: boolean | null;
+  exclude_from_regular_demand?: boolean | null;
   order_items: { quantity: number }[] | null;
 };
 
@@ -71,6 +73,7 @@ function mapListRow(row: StaffOrderListRow): StaffOrderListItem {
     payment_due_at: row.payment_due_at,
     reservation_expires_at: row.reservation_expires_at,
     is_test: Boolean(row.is_test),
+    exclude_from_regular_demand: Boolean(row.exclude_from_regular_demand),
     itemCount: items.length,
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
   };
@@ -106,7 +109,7 @@ export async function getStaffOrders(
   let request = supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, status, total, delivery_type, contact_name, contact_phone, contact_email, assigned_manager_id, payment_due_at, reservation_expires_at, is_test, order_items(quantity)",
+      "id, order_number, created_at, status, total, delivery_type, contact_name, contact_phone, contact_email, assigned_manager_id, payment_due_at, reservation_expires_at, is_test, exclude_from_regular_demand, order_items(quantity)",
     )
     .order("created_at", { ascending: false })
     .limit(query.limit ?? DEFAULT_STAFF_ORDERS_LIMIT);
@@ -238,6 +241,7 @@ export type StaffOrderDetail = {
   assigned_manager_name: string | null;
   payment_due_at: string | null;
   reservation_expires_at: string | null;
+  exclude_from_regular_demand: boolean;
   items: StaffOrderDetailItem[];
   statusHistory: StaffOrderStatusHistoryItem[];
   activityLog: StaffOrderActivityItem[];
@@ -264,6 +268,7 @@ type StaffOrderDetailRow = {
   assigned_manager_id: string | null;
   payment_due_at: string | null;
   reservation_expires_at: string | null;
+  exclude_from_regular_demand?: boolean | null;
   order_items: Record<string, unknown>[] | null;
 };
 
@@ -271,7 +276,7 @@ export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | 
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, order_number, created_at, updated_at, status, subtotal, discount, total, comment, customer_id, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, assigned_manager_id, payment_due_at, reservation_expires_at, order_items(id, product_id, product_name, quantity, unit_price, total:line_total, list_price, auto_price, price_source, quantity_tier_min_quantity, is_manual_price, manual_price_reason, manual_price_comment, price_overridden_by, price_overridden_at)",
+      "id, order_number, created_at, updated_at, status, subtotal, discount, total, comment, customer_id, contact_name, contact_phone, contact_email, delivery_type, delivery_address, delivery_comment, assigned_manager_id, payment_due_at, reservation_expires_at, exclude_from_regular_demand, order_items(id, product_id, product_name, quantity, unit_price, total:line_total, list_price, auto_price, price_source, quantity_tier_min_quantity, is_manual_price, manual_price_reason, manual_price_comment, price_overridden_by, price_overridden_at)",
     )
     .eq("id", id)
     .single();
@@ -322,6 +327,7 @@ export async function getStaffOrderById(id: string): Promise<StaffOrderDetail | 
     assigned_manager_name: assigneeName,
     payment_due_at: row.payment_due_at,
     reservation_expires_at: row.reservation_expires_at,
+    exclude_from_regular_demand: Boolean(row.exclude_from_regular_demand),
     items: items.map((item) => ({
       id: String(item.id),
       product_id: String(item.product_id),
@@ -774,3 +780,17 @@ export const STAFF_STATUS_FILTER_OPTIONS: { value: OrderStatus | "all"; label: s
   })),
   { value: "cancelled", label: ORDER_STATUS_LABELS.cancelled },
 ];
+
+export async function setStaffOrderExcludeFromRegularDemand(
+  orderId: string,
+  exclude: boolean,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("staff_set_order_exclude_from_regular_demand", {
+    p_order_id: orderId,
+    p_exclude: exclude,
+  });
+  if (error) {
+    throw new Error(error.message || "Не удалось обновить признак проектного заказа");
+  }
+  return Boolean(data);
+}

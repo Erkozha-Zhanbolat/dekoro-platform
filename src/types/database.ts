@@ -244,6 +244,28 @@ export interface Product {
   updated_at: string;
 }
 
+/** Compact factory-catalog marker row (staff-only, never in get_catalog). */
+export type FactoryCatalogRef = {
+  id: string;
+  name: string;
+  color: string;
+  is_active?: boolean;
+  sort_order?: number;
+};
+
+/** Row from public.staff_list_factory_catalogs(). */
+export type FactoryCatalog = {
+  id: string;
+  name: string;
+  color: string;
+  description: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  products_count: number;
+};
+
 /** Row from public.staff_list_products(). */
 export type StaffProductListItem = {
   id: string;
@@ -261,6 +283,7 @@ export type StaffProductListItem = {
   available_quantity: number;
   created_at: string;
   updated_at: string;
+  factory_catalogs?: FactoryCatalogRef[];
 };
 
 /** Payload from public.staff_get_product() / create / update. */
@@ -288,6 +311,7 @@ export type StaffProductDetails = {
   reserved_quantity: number;
   created_at: string;
   updated_at: string;
+  factory_catalogs?: FactoryCatalogRef[];
 };
 
 export type StaffProductCopyResult = StaffProductDetails & {
@@ -297,6 +321,21 @@ export type StaffProductCopyResult = StaffProductDetails & {
 
 export function canManageProducts(role: UserRole | null | undefined): boolean {
   return role === "admin";
+}
+
+/** Admin-only factory catalog dictionary + product assignment + recommendation settings. */
+export function canManageFactoryCatalogs(role: UserRole | null | undefined): boolean {
+  return role === "admin";
+}
+
+/** Markers/filter on staff product UI — same read surface as products. */
+export function canReadFactoryCatalogs(role: UserRole | null | undefined): boolean {
+  return role === "admin" || role === "manager" || role === "warehouse";
+}
+
+/** Procurement analytics + Excel — admin and manager. Not warehouse, not client. */
+export function canAccessProcurement(role: UserRole | null | undefined): boolean {
+  return role === "admin" || role === "manager";
 }
 
 export function canReadProducts(role: UserRole | null | undefined): boolean {
@@ -1054,6 +1093,7 @@ export type StaffProductSearchResult = {
   physical_quantity: number;
   reserved_quantity: number;
   available_quantity: number;
+  factory_catalogs?: FactoryCatalogRef[];
 };
 
 /** Row returned by public.staff_create_order / staff_create_order_for_customer. */
@@ -2319,6 +2359,7 @@ export type ProductSupplyProductSearch = {
   category_name: string | null;
   subcategory_id: string | null;
   subcategory_name: string | null;
+  factory_catalogs?: FactoryCatalogRef[];
 };
 
 export type ProductLandedCostHistoryItem = {

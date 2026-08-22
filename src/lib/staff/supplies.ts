@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { parseFactoryCatalogRefs } from "@/lib/staff/factoryCatalogParse";
 import type {
   ProductLandedCostHistoryItem,
   ProductSupplyComparisonRow,
@@ -497,6 +498,7 @@ function mapProductSearch(row: Record<string, unknown>): ProductSupplyProductSea
     category_name: asNullableString(row.category_name),
     subcategory_id: asNullableString(row.subcategory_id),
     subcategory_name: asNullableString(row.subcategory_name),
+    factory_catalogs: parseFactoryCatalogRefs(row.factory_catalogs),
   };
 }
 

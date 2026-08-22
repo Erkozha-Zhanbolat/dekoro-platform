@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
+import StaffSettingsNav from "@/components/staff/StaffSettingsNav";
 import { formatPrice } from "@/lib/formatPrice";
 import { listStaffCategories } from "@/lib/staff/products";
 import {
@@ -30,46 +30,6 @@ const btnSecondary =
   `rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:border-[#0F766E] hover:text-[#0F766E] disabled:opacity-50 ${focusRing}`;
 
 const PRODUCT_PAGE_SIZE = 50;
-
-function SettingsNav({ active }: { active: "org" | "users" | "pricing" | "data" }) {
-  const tabClass = (isActive: boolean) =>
-    isActive
-      ? "rounded-md bg-[#0F766E]/10 px-3 py-1.5 text-sm font-medium text-[#0F766E]"
-      : `rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`;
-
-  return (
-    <div className="mt-4 flex flex-wrap gap-2 border-b border-neutral-200 pb-3">
-      {active === "org" ? (
-        <span className={tabClass(true)}>Организация</span>
-      ) : (
-        <Link href="/staff/settings" className={tabClass(false)}>
-          Организация
-        </Link>
-      )}
-      {active === "users" ? (
-        <span className={tabClass(true)}>Сотрудники</span>
-      ) : (
-        <Link href="/staff/settings/users" className={tabClass(false)}>
-          Сотрудники
-        </Link>
-      )}
-      {active === "pricing" ? (
-        <span className={tabClass(true)}>Цены</span>
-      ) : (
-        <Link href="/staff/settings/pricing" className={tabClass(false)}>
-          Цены
-        </Link>
-      )}
-      {active === "data" ? (
-        <span className={tabClass(true)}>Управление данными</span>
-      ) : (
-        <Link href="/staff/settings/data" className={tabClass(false)}>
-          Управление данными
-        </Link>
-      )}
-    </div>
-  );
-}
 
 function formatTiersSummary(tiers: ProductPricingOverviewRow["quantity_tiers"]): string {
   if (tiers.length === 0) return "—";
@@ -287,7 +247,7 @@ export default function StaffPricingSettingsPage() {
         клиента (что выгоднее) → ручная цена менеджера в заказе.
       </p>
 
-      <SettingsNav active="pricing" />
+      <StaffSettingsNav active="pricing" />
 
       {/* Retail prices + quantity tiers */}
       <section className="mt-8 space-y-4">

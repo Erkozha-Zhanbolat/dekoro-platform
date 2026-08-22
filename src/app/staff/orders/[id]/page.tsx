@@ -17,6 +17,7 @@ import {
   listAssignableManagers,
   removeStaffOrderItem,
   resetStaffOrderItemPrice,
+  setStaffOrderExcludeFromRegularDemand,
   updateStaffOrderDeadlines,
   updateStaffOrderItemQuantity,
 } from "@/lib/staff/orders";
@@ -496,6 +497,41 @@ export default function StaffOrderDetailPage() {
       <p className="mt-1 text-sm text-neutral-500">
         от {new Date(order.created_at).toLocaleString("ru-RU")}
       </p>
+      {isAdmin ? (
+        <label className="mt-3 flex items-start gap-2 text-sm text-neutral-700">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-[#0F766E]"
+            checked={order.exclude_from_regular_demand}
+            disabled={actionBusy}
+            onChange={() => {
+              if (actionBusy) return;
+              const next = !order.exclude_from_regular_demand;
+              setActionBusy(true);
+              setActionError(null);
+              setStaffOrderExcludeFromRegularDemand(order.id, next)
+                .then(() => refetchOrder())
+                .catch((error: unknown) => {
+                  setActionError(
+                    error instanceof Error ? error.message : "Не удалось обновить признак",
+                  );
+                })
+                .finally(() => setActionBusy(false));
+            }}
+          />
+          <span>
+            <span className="font-medium">Не учитывать в регулярном спросе</span>
+            <span className="block text-xs text-neutral-500">
+              Крупный разовый/проектный заказ не раздувает скорость продаж для закупки.
+              Резерв склада не меняется.
+            </span>
+          </span>
+        </label>
+      ) : order.exclude_from_regular_demand ? (
+        <p className="mt-2 text-xs text-amber-800">
+          Проектный заказ — не учитывается в закупочной скорости продаж
+        </p>
+      ) : null}
 
       {showWarehouseLink && (
         <Link

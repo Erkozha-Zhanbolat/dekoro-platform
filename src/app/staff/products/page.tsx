@@ -5,8 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
 import StaffBulkSetPricesModal from "@/components/staff/StaffBulkSetPricesModal";
+import StaffBulkFactoryCatalogsModal from "@/components/staff/StaffBulkFactoryCatalogsModal";
+import FactoryCatalogMarkers from "@/components/staff/FactoryCatalogMarkers";
 import { StaffProductPhotoThumb } from "@/components/staff/StaffProductPhotoThumb";
 import { formatPrice } from "@/lib/formatPrice";
+import { listFactoryCatalogs } from "@/lib/staff/factoryCatalogs";
 import {
   archiveStaffCategory,
   createStaffCategory,
@@ -18,8 +21,10 @@ import {
 } from "@/lib/staff/products";
 import {
   STAFF_PRODUCT_STATUS_LABELS,
+  canManageFactoryCatalogs,
   canManageProducts,
   canReadProducts,
+  type FactoryCatalog,
   type StaffProductStatus,
 } from "@/types/database";
 
@@ -41,11 +46,14 @@ export default function StaffProductsPage() {
   const canRead = canReadProducts(profile?.role);
   const canManage = canManageProducts(profile?.role);
   const canBulkPrice = profile?.role === "admin";
+  const canAssignCatalogs = canManageFactoryCatalogs(profile?.role);
 
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StaffProductStatus | "">("");
+  const [catalogFilter, setCatalogFilter] = useState("");
+  const [factoryCatalogs, setFactoryCatalogs] = useState<FactoryCatalog[]>([]);
   const [products, setProducts] = useState<StaffProductListItem[]>([]);
   const [categories, setCategories] = useState<StaffCategoryListItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -61,6 +69,7 @@ export default function StaffProductsPage() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkCatalogModalOpen, setBulkCatalogModalOpen] = useState(false);
   const [bulkOk, setBulkOk] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,7 +85,7 @@ export default function StaffProductsPage() {
     return () => clearTimeout(timeout);
   }, [searchInput]);
 
-  const listKey = `${debouncedSearch}|${categoryFilter}|${statusFilter}`;
+  const listKey = `${debouncedSearch}|${categoryFilter}|${statusFilter}|${catalogFilter}`;
 
   useEffect(() => {
     if (!canRead) return;
@@ -90,13 +99,17 @@ export default function StaffProductsPage() {
         categoryId: categoryFilter || null,
         status: statusFilter || null,
         limit: LIST_LIMIT,
+        factoryCatalogId: catalogFilter && catalogFilter !== "none" ? catalogFilter : null,
+        unassignedOnly: catalogFilter === "none",
       }),
       listStaffCategories(true),
+      listFactoryCatalogs(false).catch(() => [] as FactoryCatalog[]),
     ])
-      .then(([productRows, categoryRows]) => {
+      .then(([productRows, categoryRows, catalogRows]) => {
         if (ignore) return;
         setProducts(productRows);
         setCategories(categoryRows);
+        setFactoryCatalogs(catalogRows);
         setLoadError(null);
         setLoadedKey(listKey);
         setSelectedIds(new Set());
@@ -111,7 +124,7 @@ export default function StaffProductsPage() {
     return () => {
       ignore = true;
     };
-  }, [canRead, debouncedSearch, categoryFilter, statusFilter, listKey, loadedKey]);
+  }, [canRead, debouncedSearch, categoryFilter, statusFilter, catalogFilter, listKey, loadedKey]);
 
   const allVisibleSelected =
     products.length > 0 && products.every((p) => selectedIds.has(p.id));
@@ -385,6 +398,19 @@ export default function StaffProductsPage() {
           <option value="active">{STAFF_PRODUCT_STATUS_LABELS.active}</option>
           <option value="archived">{STAFF_PRODUCT_STATUS_LABELS.archived}</option>
         </select>
+        <select
+          value={catalogFilter}
+          onChange={(e) => setCatalogFilter(e.target.value)}
+          className={inputClass}
+        >
+          <option value="">Все заводские каталоги</option>
+          {factoryCatalogs.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+          <option value="none">Без каталога</option>
+        </select>
       </div>
 
       {loadError && (
@@ -399,7 +425,7 @@ export default function StaffProductsPage() {
         </p>
       )}
 
-      {canBulkPrice && selectedIds.size > 0 && (
+      {(canBulkPrice || canAssignCatalogs) && selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#0F766E]/30 bg-[#0F766E]/5 px-4 py-3">
           <p className="text-sm text-neutral-700">
             Выбрано: <span className="font-semibold">{selectedIds.size}</span>
@@ -415,13 +441,24 @@ export default function StaffProductsPage() {
             >
               Снять выбор
             </button>
-            <button
-              type="button"
-              onClick={() => setBulkModalOpen(true)}
-              className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
-            >
-              Задать цены
-            </button>
+            {canAssignCatalogs && (
+              <button
+                type="button"
+                onClick={() => setBulkCatalogModalOpen(true)}
+                className={`rounded-md border border-[#0F766E] bg-white px-4 py-2 text-sm font-medium text-[#0F766E] hover:bg-[#0F766E]/5 ${focusRing}`}
+              >
+                Назначить заводские каталоги
+              </button>
+            )}
+            {canBulkPrice && (
+              <button
+                type="button"
+                onClick={() => setBulkModalOpen(true)}
+                className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] ${focusRing}`}
+              >
+                Задать цены
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -431,7 +468,7 @@ export default function StaffProductsPage() {
           <p className="px-5 py-6 text-sm text-neutral-500">Загрузка...</p>
         ) : products.length === 0 ? (
           <p className="px-5 py-6 text-sm text-neutral-500">
-            {debouncedSearch || categoryFilter || statusFilter
+            {debouncedSearch || categoryFilter || statusFilter || catalogFilter
               ? "Товары не найдены"
               : "Товаров пока нет"}
           </p>
@@ -486,7 +523,10 @@ export default function StaffProductsPage() {
                       className="h-12 w-12 rounded-md"
                     />
                   </td>
-                  <td className="px-4 py-3 font-medium text-neutral-800">{product.sku}</td>
+                  <td className="px-4 py-3 font-medium text-neutral-800">
+                    <span className="mr-1">{product.sku}</span>
+                    <FactoryCatalogMarkers catalogs={product.factory_catalogs} />
+                  </td>
                   <td className="px-4 py-3 text-neutral-800">{product.name}</td>
                   <td className="px-4 py-3 text-neutral-600">
                     {product.category_name ?? "—"}
@@ -540,6 +580,20 @@ export default function StaffProductsPage() {
           onApplied={() => {
             setBulkModalOpen(false);
             setBulkOk(`Цены обновлены для ${selectedIds.size} товар(ов)`);
+            setSelectedIds(new Set());
+            reloadProducts();
+          }}
+        />
+      )}
+
+      {bulkCatalogModalOpen && (
+        <StaffBulkFactoryCatalogsModal
+          productIds={[...selectedIds]}
+          catalogs={factoryCatalogs}
+          onClose={() => setBulkCatalogModalOpen(false)}
+          onApplied={(message) => {
+            setBulkCatalogModalOpen(false);
+            setBulkOk(message);
             setSelectedIds(new Set());
             reloadProducts();
           }}

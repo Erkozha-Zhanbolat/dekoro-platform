@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useProfile } from "@/context/ProfileContext";
 import { StaffProductPhotoThumb } from "@/components/staff/StaffProductPhotoThumb";
+import FactoryCatalogMarkers from "@/components/staff/FactoryCatalogMarkers";
 import {
   clearProductMainPhoto,
   copyProductMainPhoto,
@@ -20,6 +21,10 @@ import {
   type StaffProductDetails,
   type StaffProductWriteInput,
 } from "@/lib/staff/products";
+import {
+  listFactoryCatalogs,
+  setProductFactoryCatalogs,
+} from "@/lib/staff/factoryCatalogs";
 import {
   adjustStaffProductInventory,
   getStaffProductInventory,
@@ -38,6 +43,8 @@ import {
   canRecordStockReceipt,
   canViewInventoryMovementHistory,
   canAccessProductSupplies,
+  canManageFactoryCatalogs,
+  type FactoryCatalog,
   type StaffProductStatus,
 } from "@/types/database";
 import { StaffProductAnalytics } from "@/components/staff/StaffProductAnalytics";
@@ -70,6 +77,7 @@ export default function StaffProductDetailPage() {
   const canReceipt = canRecordStockReceipt(profile?.role);
   const canViewMovements = canViewInventoryMovementHistory(profile?.role);
   const canSeeLandedCost = canAccessProductSupplies(profile?.role);
+  const canAssignCatalogs = canManageFactoryCatalogs(profile?.role);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -120,6 +128,11 @@ export default function StaffProductDetailPage() {
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [receiptInfo, setReceiptInfo] = useState<string | null>(null);
+  const [factoryCatalogs, setFactoryCatalogs] = useState<FactoryCatalog[]>([]);
+  const [selectedCatalogIds, setSelectedCatalogIds] = useState<Set<string>>(new Set());
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogOk, setCatalogOk] = useState(false);
 
   useEffect(() => {
     if (!profileLoading && profile && !canRead) {
@@ -143,6 +156,7 @@ export default function StaffProductDetailPage() {
     setWidthMm(toInputNumber(row.width_mm));
     setThicknessMm(toInputNumber(row.thickness_mm));
     setWeightKg(toInputNumber(row.weight_kg));
+    setSelectedCatalogIds(new Set((row.factory_catalogs ?? []).map((c) => c.id)));
   }
 
   useEffect(() => {
@@ -155,6 +169,7 @@ export default function StaffProductDetailPage() {
       getStaffProduct(productId),
       listStaffCategories(true),
       getStaffProductInventory(productId),
+      listFactoryCatalogs(false).catch(() => [] as FactoryCatalog[]),
       canViewMovements
         ? listStaffProductInventoryAdjustments(productId, 20)
         : Promise.resolve([] as StaffInventoryAdjustment[]),
@@ -162,11 +177,12 @@ export default function StaffProductDetailPage() {
         ? listStaffProductStockReceipts(productId, 20)
         : Promise.resolve([] as StaffStockReceipt[]),
     ])
-      .then(([row, cats, inv, history, receiptHistory]) => {
+      .then(([row, cats, inv, catalogRows, history, receiptHistory]) => {
         if (ignore) return;
         applyProduct(row);
         setCategories(cats);
         setInventory(inv);
+        setFactoryCatalogs(catalogRows);
         setAdjustments(history);
         setReceipts(receiptHistory);
         setInventoryError(null);
@@ -477,7 +493,10 @@ export default function StaffProductDetailPage() {
         )}
       </div>
 
-      <h1 className="mt-4 text-2xl font-bold text-neutral-800">{product.name}</h1>
+      <h1 className="mt-4 text-2xl font-bold text-neutral-800">
+        {product.name}{" "}
+        <FactoryCatalogMarkers catalogs={product.factory_catalogs} className="ml-1" />
+      </h1>
       <p className="mt-1 text-sm text-neutral-500">
         {product.sku}
         {inventory
@@ -727,6 +746,76 @@ export default function StaffProductDetailPage() {
               />
             </label>
           </div>
+        </section>
+
+        <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+            Заводские каталоги
+          </h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            {canAssignCatalogs
+              ? "Товар может быть сразу в нескольких книгах завода. Клиенты это не видят."
+              : "Только просмотр. Назначает администратор."}
+          </p>
+          {factoryCatalogs.length === 0 ? (
+            <p className="mt-3 text-sm text-neutral-400">Каталоги ещё не созданы</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {factoryCatalogs.map((catalog) => (
+                <li key={catalog.id}>
+                  <label className="flex items-center gap-2 text-sm text-neutral-800">
+                    <input
+                      type="checkbox"
+                      className="accent-[#0F766E]"
+                      checked={selectedCatalogIds.has(catalog.id)}
+                      disabled={!canAssignCatalogs || catalogBusy}
+                      onChange={() => {
+                        setSelectedCatalogIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(catalog.id)) next.delete(catalog.id);
+                          else next.add(catalog.id);
+                          return next;
+                        });
+                        setCatalogOk(false);
+                      }}
+                    />
+                    <FactoryCatalogMarkers catalogs={[catalog]} />
+                    <span>{catalog.name}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          {catalogError ? (
+            <p className="mt-2 text-sm text-red-600" role="alert">
+              {catalogError}
+            </p>
+          ) : null}
+          {catalogOk ? (
+            <p className="mt-2 text-sm text-[#0F766E]">Каталоги сохранены</p>
+          ) : null}
+          {canAssignCatalogs ? (
+            <button
+              type="button"
+              disabled={catalogBusy}
+              onClick={() => {
+                setCatalogBusy(true);
+                setCatalogError(null);
+                setProductFactoryCatalogs(productId, [...selectedCatalogIds])
+                  .then((next) => {
+                    setProduct((prev) => (prev ? { ...prev, factory_catalogs: next } : prev));
+                    setCatalogOk(true);
+                  })
+                  .catch((err: unknown) => {
+                    setCatalogError(err instanceof Error ? err.message : "Не удалось сохранить каталоги");
+                  })
+                  .finally(() => setCatalogBusy(false));
+              }}
+              className={`mt-3 rounded-md border border-neutral-200 px-4 py-2 text-sm font-medium hover:border-[#0F766E] hover:text-[#0F766E] disabled:opacity-60 ${focusRing}`}
+            >
+              {catalogBusy ? "Сохранение..." : "Сохранить каталоги"}
+            </button>
+          ) : null}
         </section>
 
         {saveError && (

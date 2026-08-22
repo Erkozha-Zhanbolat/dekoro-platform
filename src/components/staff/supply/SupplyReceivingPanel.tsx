@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import FactoryCatalogMarkers from "@/components/staff/FactoryCatalogMarkers";
 import {
   addUnexpectedProductSupplyReceivingItem,
   confirmProductSupplyReceiving,
@@ -542,7 +543,8 @@ function UnexpectedProductModal({
                     selected?.id === row.id ? "bg-teal-50 text-[#0F766E]" : "hover:bg-neutral-50"
                   }`}
                 >
-                  <span className="font-medium">{row.sku}</span> · {row.name}
+                  <span className="font-medium">{row.sku}</span> · {row.name}{" "}
+                  <FactoryCatalogMarkers catalogs={row.factory_catalogs} />
                 </button>
               ))}
             </div>

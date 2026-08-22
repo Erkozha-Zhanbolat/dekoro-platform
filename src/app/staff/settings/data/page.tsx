@@ -293,6 +293,12 @@ export default function StaffDataCenterPage() {
           >
             Цены
           </Link>
+          <Link
+            href="/staff/settings/catalogs"
+            className={`rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
+          >
+            Заводские каталоги
+          </Link>
           <span className="rounded-md bg-[#0F766E]/10 px-3 py-1.5 text-sm font-medium text-[#0F766E]">
             Data Center
           </span>

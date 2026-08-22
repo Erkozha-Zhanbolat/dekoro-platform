@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { parseFactoryCatalogRefs } from "@/lib/staff/factoryCatalogParse";
 import type {
   StaffCategoryListItem,
   StaffProductCopyResult,
@@ -34,6 +35,8 @@ export type StaffListProductsParams = {
   categoryId?: string | null;
   status?: StaffProductStatus | "" | null;
   limit?: number;
+  factoryCatalogId?: string | null;
+  unassignedOnly?: boolean;
 };
 
 const DEFAULT_LIST_LIMIT = 100;
@@ -76,6 +79,7 @@ function mapListItem(row: StaffProductListItem): StaffProductListItem {
     available_quantity: asNumber(row.available_quantity, 0),
     created_at: row.created_at,
     updated_at: row.updated_at,
+    factory_catalogs: parseFactoryCatalogRefs(row.factory_catalogs),
   };
 }
 
@@ -104,6 +108,7 @@ function mapDetails(row: StaffProductDetails): StaffProductDetails {
     reserved_quantity: asNumber(row.reserved_quantity, 0),
     created_at: row.created_at,
     updated_at: row.updated_at,
+    factory_catalogs: parseFactoryCatalogRefs(row.factory_catalogs),
   };
 }
 
@@ -130,6 +135,8 @@ export async function listStaffProducts(
     p_category_id: params.categoryId || null,
     p_status: params.status || null,
     p_limit: params.limit ?? DEFAULT_LIST_LIMIT,
+    p_factory_catalog_id: params.unassignedOnly ? null : params.factoryCatalogId || null,
+    p_unassigned_only: Boolean(params.unassignedOnly),
   });
 
   if (error) {

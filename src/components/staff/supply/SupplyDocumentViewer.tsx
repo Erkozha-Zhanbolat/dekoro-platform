@@ -8,6 +8,7 @@ import {
   type ProductSupplyProductSearch,
   type SupplyDocumentProductCandidate,
 } from "@/types/database";
+import FactoryCatalogMarkers from "@/components/staff/FactoryCatalogMarkers";
 import {
   commitSupplyImport,
   createDraftForSupplyDocumentRow,
@@ -702,7 +703,8 @@ function ProductPickPanel({
               className={`w-full px-1 py-1 text-left hover:bg-white ${focusRing}`}
             >
               <span className="font-medium">
-                {row.sku} — {row.name}
+                {row.sku} — {row.name}{" "}
+                <FactoryCatalogMarkers catalogs={row.factory_catalogs} />
               </span>
               <span className="block text-[11px] text-neutral-500">
                 {productContext({

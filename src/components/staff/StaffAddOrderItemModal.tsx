@@ -7,6 +7,7 @@ import { searchStaffProducts } from "@/lib/staff/inventory";
 import type { StaffProductSearchResult } from "@/lib/staff/inventory";
 import { addStaffOrderItem, previewStaffItemPrice } from "@/lib/staff/orders";
 import type { ItemPricePreview } from "@/types/database";
+import FactoryCatalogMarkers from "@/components/staff/FactoryCatalogMarkers";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -217,7 +218,8 @@ function ProductRow({
         <p className="text-sm font-medium text-neutral-800">{product.name}</p>
         <p className="text-xs text-neutral-500">
           {product.sku}
-          {product.category ? ` · ${product.category}` : ""}
+          {product.category ? ` · ${product.category}` : ""}{" "}
+          <FactoryCatalogMarkers catalogs={product.factory_catalogs} />
         </p>
         {error && (
           <p className="mt-1 text-xs text-red-600" role="alert">

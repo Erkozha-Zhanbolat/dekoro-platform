@@ -393,6 +393,11 @@ function StaffOrdersPageContent({
                               Тестовый
                             </span>
                           ) : null}
+                          {order.exclude_from_regular_demand ? (
+                            <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-700">
+                              Проект
+                            </span>
+                          ) : null}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-neutral-600">
@@ -466,6 +471,11 @@ function StaffOrdersPageContent({
                           {order.is_test ? (
                             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
                               Тестовый
+                            </span>
+                          ) : null}
+                          {order.exclude_from_regular_demand ? (
+                            <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-700">
+                              Проект
                             </span>
                           ) : null}
                         </span>
