@@ -23,24 +23,6 @@ const primaryLinks = [
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
-function SearchIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      {...props}
-    >
-      <circle cx="11" cy="11" r="7" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  );
-}
-
 function CartIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
@@ -132,30 +114,6 @@ function CloseIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-function SearchField({ id }: { id: string }) {
-  return (
-    <div className="relative">
-      <label htmlFor={id} className="sr-only">
-        Поиск по товарам и артикулам
-      </label>
-      <input
-        id={id}
-        type="search"
-        name="q"
-        placeholder="Поиск по товарам и артикулам"
-        className={`w-full rounded-md border border-neutral-200 bg-neutral-50 py-2.5 pl-4 pr-11 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 focus:border-[#0F766E] focus:bg-white focus:ring-1 focus:ring-[#0F766E] ${focusRing}`}
-      />
-      <button
-        type="submit"
-        aria-label="Найти"
-        className={`absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-[#0F766E] ${focusRing}`}
-      >
-        <SearchIcon className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
-
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
@@ -211,13 +169,6 @@ export default function Header() {
               </Link>
             ))}
           </nav>
-
-          <form
-            onSubmit={(event) => event.preventDefault()}
-            className="hidden flex-1 max-w-xl md:block"
-          >
-            <SearchField id="header-search-desktop" />
-          </form>
 
           <div className="ml-auto flex items-center gap-2 md:gap-6">
             {user ? (
@@ -296,13 +247,6 @@ export default function Header() {
             </div>
           </div>
         </div>
-
-        <form
-          onSubmit={(event) => event.preventDefault()}
-          className="pb-3 md:hidden"
-        >
-          <SearchField id="header-search-mobile" />
-        </form>
       </div>
 
       {isMenuOpen && (
