@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { computeDiscountPercent } from "@/lib/pricing";
 import { getAvailableStock } from "@/lib/inventory";
@@ -19,6 +20,7 @@ const REPEAT_NOTICE_KEY = "dekoro_repeat_order_notice";
 export default function CartPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const toast = useToast();
   const {
     items,
     totalAmount,
@@ -146,7 +148,10 @@ export default function CartPage() {
 
                     <button
                       type="button"
-                      onClick={() => removeItem(item.product.id)}
+                      onClick={() => {
+                        removeItem(item.product.id);
+                        toast.info("Товар удалён из корзины", item.product.name);
+                      }}
                       aria-label="Удалить товар"
                       className={`rounded-sm text-sm font-medium text-neutral-400 transition-colors hover:text-red-600 ${focusRing}`}
                     >

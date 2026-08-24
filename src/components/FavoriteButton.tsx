@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useFavorites } from "@/context/FavoritesContext";
+import { useToast } from "@/context/ToastContext";
 import { useSupabaseCatalog, useSupabaseFavorites } from "@/lib/featureFlags";
+import { safeUserFacingErrorDetail } from "@/lib/toastFeedback";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -29,12 +31,19 @@ function HeartIcon({ filled, className }: { filled: boolean; className?: string 
 
 interface FavoriteButtonProps {
   productId: string;
+  /** Shown as toast secondary line when provided. */
+  productName?: string;
   variant?: "icon" | "labeled";
 }
 
-export default function FavoriteButton({ productId, variant = "icon" }: FavoriteButtonProps) {
+export default function FavoriteButton({
+  productId,
+  productName,
+  variant = "icon",
+}: FavoriteButtonProps) {
   const { user } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const toast = useToast();
   const [isPending, setIsPending] = useState(false);
   const [showGuestHint, setShowGuestHint] = useState(false);
   const hintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,11 +83,17 @@ export default function FavoriteButton({ productId, variant = "icon" }: Favorite
       return;
     }
 
+    const wasFavorite = isFavorite(productId);
     setIsPending(true);
     try {
       await toggleFavorite(productId);
-    } catch {
-      // FavoritesContext already stores a readable error message.
+      if (wasFavorite) {
+        toast.info("Удалено из избранного", productName);
+      } else {
+        toast.success("Добавлено в избранное", productName);
+      }
+    } catch (error) {
+      toast.error("Не удалось выполнить действие", safeUserFacingErrorDetail(error));
     } finally {
       setIsPending(false);
     }

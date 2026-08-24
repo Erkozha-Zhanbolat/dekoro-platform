@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
+import { useToast } from "@/context/ToastContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { computeDiscountPercent, computeSavingsPerUnit } from "@/lib/pricing";
 import { getCartPricing } from "@/lib/cartPricing";
 import type { CartPricingRow } from "@/lib/cartPricing";
 import { getAvailableStock } from "@/lib/inventory";
+import { cartAddedToastCopy } from "@/lib/toastFeedback";
 import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
 import FavoriteButton from "@/components/FavoriteButton";
@@ -19,6 +21,7 @@ const focusRing =
 
 export default function ProductDetail({ product }: { product: Product }) {
   const { items, addToCart } = useCart();
+  const toast = useToast();
   const availableStock = getAvailableStock(product);
   const isOutOfStock = availableStock <= 0;
 
@@ -47,7 +50,15 @@ export default function ProductDetail({ product }: { product: Product }) {
     if (quantityToAdd <= 0) {
       return;
     }
+    const wasAlreadyInCart = quantityInCart > 0;
     addToCart(product, quantityToAdd);
+    const copy = cartAddedToastCopy({
+      productName: product.name,
+      quantity: quantityToAdd,
+      unit: product.unit,
+      wasAlreadyInCart,
+    });
+    toast.success(copy.title, copy.description);
     setQuantity(1);
   }
 
@@ -213,7 +224,11 @@ export default function ProductDetail({ product }: { product: Product }) {
             >
               {isOutOfStock ? "Нет в наличии" : "Добавить в корзину"}
             </button>
-            <FavoriteButton productId={getFavoriteProductId(product)} variant="labeled" />
+            <FavoriteButton
+              productId={getFavoriteProductId(product)}
+              productName={product.name}
+              variant="labeled"
+            />
           </div>
         </div>
       </div>

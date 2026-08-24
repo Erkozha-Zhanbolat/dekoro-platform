@@ -9,6 +9,7 @@ import { ProfileProvider } from "@/context/ProfileContext";
 import { CatalogProvider } from "@/context/CatalogContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
 import { CartProvider } from "@/context/CartContext";
+import { ToastProvider } from "@/context/ToastContext";
 import { AnalyticsProvider } from "@/context/AnalyticsContext";
 import { AnalyticsConsentBanner } from "@/components/AnalyticsConsentBanner";
 import "./globals.css";
@@ -45,15 +46,17 @@ export default function RootLayout({
             <CatalogProvider>
               <FavoritesProvider>
                 <CartProvider>
-                  <Suspense fallback={null}>
-                    <AuthRedirectGate />
-                    <AnalyticsProvider>
-                      <Header />
-                      <main className="flex-1">{children}</main>
-                      <Footer />
-                      <AnalyticsConsentBanner />
-                    </AnalyticsProvider>
-                  </Suspense>
+                  <ToastProvider>
+                    <Suspense fallback={null}>
+                      <AuthRedirectGate />
+                      <AnalyticsProvider>
+                        <Header />
+                        <main className="flex-1">{children}</main>
+                        <Footer />
+                        <AnalyticsConsentBanner />
+                      </AnalyticsProvider>
+                    </Suspense>
+                  </ToastProvider>
                 </CartProvider>
               </FavoritesProvider>
             </CatalogProvider>

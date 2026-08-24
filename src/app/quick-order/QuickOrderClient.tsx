@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Product } from "@/types/product";
 import { useCatalog } from "@/context/CatalogContext";
 import { useCart } from "@/context/CartContext";
+import { useToast } from "@/context/ToastContext";
 import { getAvailableStock } from "@/lib/inventory";
 import { formatPrice } from "@/lib/formatPrice";
 import { QuickOrderRow, QUICK_ORDER_GRID_TEMPLATE } from "@/components/QuickOrderRow";
@@ -40,10 +41,10 @@ export default function QuickOrderClient() {
   const catalog = useCatalog();
   const { ensureCatalogLoaded } = catalog;
   const { items: cartItems, addManyToCart } = useCart();
+  const toast = useToast();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [selection, setSelection] = useState<QuickOrderSelection>({});
-  const [addedMessage, setAddedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     ensureCatalogLoaded();
@@ -92,8 +93,6 @@ export default function QuickOrderClient() {
     const remainingCapacity = productStateById.get(productId)?.remainingCapacity ?? 0;
     const clamped = Math.max(0, Math.min(Math.trunc(quantity), remainingCapacity));
     setSelection((current) => ({ ...current, [productId]: clamped }));
-    // A quantity change makes any previous "added to cart" message stale.
-    setAddedMessage(null);
   }
 
   // Single source of truth for every selection-derived value (summary bar
@@ -165,7 +164,10 @@ export default function QuickOrderClient() {
       return next;
     });
 
-    setAddedMessage(`Добавлено в корзину: ${selectedEntries.length} позиций`);
+    toast.success(
+      "Товары добавлены в корзину",
+      `${selectedEntries.length} позиций · ${totalQuantity} шт.`,
+    );
   }
 
   return (
@@ -223,12 +225,6 @@ export default function QuickOrderClient() {
             <span>Найдено товаров: {filteredProducts.length}</span>
             <span>Выбрано позиций: {selectedCount}</span>
           </div>
-
-          {addedMessage && (
-            <p className="mt-3 rounded-md bg-[#0F766E]/10 px-3 py-2 text-sm font-medium text-[#0F766E]">
-              {addedMessage}
-            </p>
-          )}
 
           {filteredProducts.length > 0 ? (
             <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200">

@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
+import { useToast } from "@/context/ToastContext";
 import { formatPrice } from "@/lib/formatPrice";
 import { computeDiscountPercent } from "@/lib/pricing";
 import { getAvailableStock } from "@/lib/inventory";
+import { cartAddedToastCopy } from "@/lib/toastFeedback";
 import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
 import FavoriteButton from "@/components/FavoriteButton";
@@ -26,6 +28,7 @@ export default function ProductCard({
   imageLoading = "lazy",
 }: ProductCardProps) {
   const { items, addToCart } = useCart();
+  const toast = useToast();
   const availableStock = getAvailableStock(product);
   const isOutOfStock = availableStock <= 0;
   const productHref = `/product/${product.id}`;
@@ -57,7 +60,15 @@ export default function ProductCard({
     if (quantityToAdd <= 0) {
       return;
     }
+    const wasAlreadyInCart = quantityInCart > 0;
     addToCart(product, quantityToAdd);
+    const copy = cartAddedToastCopy({
+      productName: product.name,
+      quantity: quantityToAdd,
+      unit: product.unit,
+      wasAlreadyInCart,
+    });
+    toast.success(copy.title, copy.description);
     setQuantity(1);
   }
 
@@ -74,7 +85,10 @@ export default function ProductCard({
           />
         </Link>
         <div className="absolute right-2 top-2 z-10">
-          <FavoriteButton productId={getFavoriteProductId(product)} />
+          <FavoriteButton
+            productId={getFavoriteProductId(product)}
+            productName={product.name}
+          />
         </div>
       </div>
 
