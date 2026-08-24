@@ -22,9 +22,11 @@ $$;
 
 insert into public.categories (name, slug, sort_order, is_active)
 values
-  ('Бамбуковые панели', 'bambukovye-paneli', 1, true),
-  ('Луверы', 'luvery', 2, true),
-  ('Алюминиевые профили', 'alyuminievye-profili', 3, true)
+  ('Бамбуковые панели', 'bambukovye-paneli', 10, true),
+  ('Луверы', 'luvery', 20, true),
+  ('Плинтусы', 'plintusy', 30, true),
+  ('Алюминиевые профили', 'alyuminievye-profili', 40, true),
+  ('Клей', 'kley', 50, true)
 on conflict (slug) do update set
   name = excluded.name,
   sort_order = excluded.sort_order,

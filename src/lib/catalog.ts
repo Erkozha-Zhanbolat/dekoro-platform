@@ -100,42 +100,8 @@ export function resolveCatalogImageUrl(
 }
 
 /**
- * Storefront grouping key: known PRODUCT_CATEGORIES first (seed/UI order),
- * then any other category name, then uncategorized last. Stable — does not
- * re-order items inside the same category (preserves RPC subcategory / name
- * order when get_catalog is sorted that way).
- */
-function compareStorefrontCategory(
-  a: string | null | undefined,
-  b: string | null | undefined,
-): number {
-  const rank = (category: string | null | undefined): number => {
-    if (!category) return KNOWN_CATEGORIES.length + 1;
-    const known = KNOWN_CATEGORIES.indexOf(category);
-    return known === -1 ? KNOWN_CATEGORIES.length : known;
-  };
-
-  const byRank = rank(a) - rank(b);
-  if (byRank !== 0) return byRank;
-  return (a ?? "").localeCompare(b ?? "", "ru");
-}
-
-/** Groups catalog rows by category without shuffling items inside a group. */
-export function sortCatalogByCategory<T extends { category: string | null }>(
-  entries: T[],
-): T[] {
-  return entries
-    .map((entry, index) => ({ entry, index }))
-    .sort((left, right) => {
-      const byCategory = compareStorefrontCategory(left.entry.category, right.entry.category);
-      return byCategory !== 0 ? byCategory : left.index - right.index;
-    })
-    .map(({ entry }) => entry);
-}
-
-/**
  * Fetches the storefront catalog via Supabase RPC.
- * No UI — data access only.
+ * Order is server-side (categories.sort_order / Stage 45) — no client re-sort.
  */
 export async function getCatalog(): Promise<CatalogProduct[]> {
   const { data, error } = await supabase.rpc("get_catalog");
@@ -144,7 +110,7 @@ export async function getCatalog(): Promise<CatalogProduct[]> {
     throw new Error(error.message || "Не удалось загрузить каталог");
   }
 
-  return sortCatalogByCategory((data as CatalogProduct[] | null) ?? []);
+  return (data as CatalogProduct[] | null) ?? [];
 }
 
 /** Default page size for storefront infinite scroll (24–40 range). */

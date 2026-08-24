@@ -248,7 +248,10 @@ async function liveCheck() {
 
   const categories = [...new Set(oracle.map((r) => r.category).filter(Boolean))] as string[];
   if (categories.length > 0) {
-    walkSimulated(`category:${categories[0]}`, filterOracle(null, categories[0]));
+    // Prefer first *business* category when present; else any.
+    const filterCat =
+      categories.find((c) => c === "Бамбуковые панели") ?? categories[0];
+    walkSimulated(`category:${filterCat}`, filterOracle(null, filterCat));
   }
 
   const skuNeedle = oracle.find((r) => r.sku && r.sku.length >= 2)?.sku ?? null;
@@ -293,13 +296,54 @@ async function liveCheck() {
   console.log("catalog.pagination.selfcheck: live RPC checks…");
   await walkRpc("all", null, null);
   if (categories.length > 0) {
-    await walkRpc(`category:${categories[0]}`, null, categories[0]);
+    const filterCat =
+      categories.find((c) => c === "Бамбуковые панели") ?? categories[0];
+    await walkRpc(`category:${filterCat}`, null, filterCat);
   }
   if (skuNeedle) {
     await walkRpc(`search-sku:${skuNeedle}`, skuNeedle, null);
   }
 
-  console.log("catalog.pagination.selfcheck: live OFFSET checks passed");
+  // --- Business category order (migration 047) ---
+  const expectedChipOrder = [
+    "Бамбуковые панели",
+    "Луверы",
+    "Плинтусы",
+    "Алюминиевые профили",
+    "Клей",
+  ];
+  const appearanceOrder: string[] = [];
+  for (const row of oracle) {
+    if (row.category && !appearanceOrder.includes(row.category)) {
+      appearanceOrder.push(row.category);
+    }
+  }
+  const expectedCore = expectedChipOrder.filter((c) => appearanceOrder.includes(c));
+  const actualCore = appearanceOrder.filter((c) => expectedChipOrder.includes(c));
+  console.log("  catalog category appearance:", appearanceOrder.join(" | "));
+
+  const chipsRpc = await supabase.rpc("get_catalog_categories");
+  if (!chipsRpc.error && Array.isArray(chipsRpc.data)) {
+    const chipNames = (chipsRpc.data as { category: string }[]).map((r) => r.category);
+    console.log("  chips order:", chipNames.join(" | "));
+    const chipCore = chipNames.filter((c) => expectedChipOrder.includes(c));
+    assertEq(
+      "get_catalog_categories core order (apply 047 if failing)",
+      chipCore.join(" > "),
+      expectedCore.join(" > "),
+    );
+  }
+
+  assertEq(
+    "get_catalog / page business category order (apply 047 if failing)",
+    actualCore.join(" > "),
+    expectedCore.join(" > "),
+  );
+  if (oracle.length > 0 && appearanceOrder.includes("Бамбуковые панели")) {
+    assertEq("first product category", oracle[0]?.category, "Бамбуковые панели");
+  }
+
+  console.log("catalog.pagination.selfcheck: live OFFSET + category order checks passed");
 }
 
 liveCheck()

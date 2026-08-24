@@ -1,6 +1,12 @@
+/**
+ * Known storefront category labels (types / fallbacks only).
+ * Display and pagination order come from categories.sort_order in Postgres
+ * (migration 047) — do not use this array as a second sort authority.
+ */
 export const PRODUCT_CATEGORIES = [
   "Бамбуковые панели",
   "Луверы",
+  "Плинтусы",
   "Алюминиевые профили",
   "Клей",
   "Монтажная пена",
