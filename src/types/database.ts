@@ -1050,8 +1050,9 @@ export type CreateOrderResult = {
   created_at: string;
 };
 
-// Row shape returned by the get_catalog() RPC
-// (002_catalog_inventory_pricing.sql, extended in 020 with updated_at).
+/** Row shape returned by the get_catalog() RPC
+ * (002_catalog_inventory_pricing.sql, extended in 020 / 041 / 045).
+ */
 export interface CatalogEntry {
   product_id: string;
   name: string;
@@ -1062,8 +1063,15 @@ export interface CatalogEntry {
   unit: string;
   available_stock: number;
   sale_price: number | null;
+  list_price?: number | null;
   image: string | null;
   is_promotion: boolean;
+  updated_at?: string;
+}
+
+/** Row shape returned by public.get_catalog_page() (046). */
+export interface CatalogPageEntry extends CatalogEntry {
+  total_count: number;
 }
 
 // ============================================================

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import ProductCard from "@/components/ProductCard";
 import { useAuth } from "@/context/AuthContext";
 import { useCatalog } from "@/context/CatalogContext";
@@ -14,7 +15,12 @@ const focusRing =
 export default function FavoritesPage() {
   const { user } = useAuth();
   const catalog = useCatalog();
+  const { ensureCatalogLoaded } = catalog;
   const { favoriteProductIds, favoritesLoading, favoritesError } = useFavorites();
+
+  useEffect(() => {
+    ensureCatalogLoaded();
+  }, [ensureCatalogLoaded]);
 
   // Signing in is only required in Supabase mode (favorites are tied to a
   // user there). With local favorites storage, guests can keep favorites too.

@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ProductCard from "@/components/ProductCard";
-import { useCatalog } from "@/context/CatalogContext";
+import { useAuth } from "@/context/AuthContext";
 import { trackEvent } from "@/lib/analytics/track";
+import {
+  CATALOG_PAGE_SIZE,
+  getCatalogCategories,
+  getCatalogPage,
+  mapCatalogProductToProduct,
+} from "@/lib/catalog";
+import type { Product } from "@/types/product";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function categoryButtonClass(isActive: boolean) {
   return `rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${focusRing} ${
@@ -16,36 +25,78 @@ function categoryButtonClass(isActive: boolean) {
   }`;
 }
 
+function mergeUniqueProducts(current: Product[], incoming: Product[]): Product[] {
+  if (incoming.length === 0) {
+    return current;
+  }
+  const seen = new Set(current.map((item) => item.id));
+  const next = [...current];
+  for (const product of incoming) {
+    if (!seen.has(product.id)) {
+      seen.add(product.id);
+      next.push(product);
+    }
+  }
+  return next;
+}
+
 export default function CatalogPage() {
-  const catalog = useCatalog();
-  const { refreshCatalog } = catalog;
+  const { user, loading: authLoading } = useAuth();
+  const currentUserId = user?.id ?? null;
+
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
+  const [categoryNames, setCategoryNames] = useState<string[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const offsetRef = useRef(0);
+  const productsRef = useRef<Product[]>([]);
+  const hasMoreRef = useRef(false);
+  const loadingMoreRef = useRef(false);
+  const requestIdRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const analyticsSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSearch = useRef<string>("");
   const lastCategory = useRef<string | null>(null);
 
-  // CatalogProvider (root layout) loads the catalog once per signed-in
-  // identity and never refetches on its own — stock/availability otherwise
-  // stays stuck at whatever it was on first load for the whole session
-  // (e.g. still showing pre-order quantity after create_order()/cancel_order()
-  // changed reserved_quantity server-side). Re-running getCatalog() every
-  // time this page mounts (including client-side navigation back to
-  // /catalog) keeps available_stock current without a full page reload.
   useEffect(() => {
-    void refreshCatalog();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    productsRef.current = products;
+  }, [products]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  useEffect(() => {
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+    }
+    searchTimer.current = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (searchTimer.current) {
+        clearTimeout(searchTimer.current);
+      }
+    };
+  }, [query]);
 
   useEffect(() => {
     const normalized = query.trim();
-    if (searchTimer.current) {
-      clearTimeout(searchTimer.current);
+    if (analyticsSearchTimer.current) {
+      clearTimeout(analyticsSearchTimer.current);
     }
     if (normalized.length < 2) {
       return;
     }
-    searchTimer.current = setTimeout(() => {
+    analyticsSearchTimer.current = setTimeout(() => {
       if (lastSearch.current === normalized) return;
       lastSearch.current = normalized;
       trackEvent({
@@ -54,7 +105,9 @@ export default function CatalogPage() {
       });
     }, 600);
     return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
+      if (analyticsSearchTimer.current) {
+        clearTimeout(analyticsSearchTimer.current);
+      }
     };
   }, [query]);
 
@@ -71,19 +124,138 @@ export default function CatalogPage() {
     });
   }, [category]);
 
-  const filteredProducts = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+  useEffect(() => {
+    let ignore = false;
+    getCatalogCategories()
+      .then((names) => {
+        if (!ignore) {
+          setCategoryNames(names);
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setCategoryNames([]);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
-    return catalog.products.filter((product) => {
-      const matchesQuery =
-        normalizedQuery.length === 0 ||
-        product.name.toLowerCase().includes(normalizedQuery) ||
-        product.sku.toLowerCase().includes(normalizedQuery);
-      const matchesCategory = category === null || product.category === category;
+  const loadPage = useCallback(
+    async (mode: "replace" | "append") => {
+      if (authLoading) {
+        return;
+      }
 
-      return matchesQuery && matchesCategory;
-    });
-  }, [catalog.products, query, category]);
+      if (mode === "append") {
+        if (loadingMoreRef.current || !hasMoreRef.current) {
+          return;
+        }
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+      }
+
+      const requestId = ++requestIdRef.current;
+      if (mode === "replace") {
+        offsetRef.current = 0;
+        loadingMoreRef.current = false;
+      }
+
+      try {
+        // Yield so replace-mode loading flags are not set synchronously inside effects.
+        if (mode === "replace") {
+          await Promise.resolve();
+          if (requestId !== requestIdRef.current) {
+            return;
+          }
+          setInitialLoading(true);
+          setLoadingMore(false);
+          setError(null);
+        }
+
+        const page = await getCatalogPage({
+          limit: CATALOG_PAGE_SIZE,
+          search: debouncedQuery || null,
+          category,
+          offset: mode === "append" ? offsetRef.current : 0,
+        });
+
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+
+        const mapped = page.products.map(mapCatalogProductToProduct);
+        setTotalCount(page.totalCount);
+
+        let nextProducts: Product[];
+        if (mode === "replace") {
+          nextProducts = mapped;
+        } else {
+          nextProducts = mergeUniqueProducts(productsRef.current, mapped);
+        }
+
+        productsRef.current = nextProducts;
+        setProducts(nextProducts);
+        offsetRef.current = page.nextOffset;
+
+        const nextHasMore = page.hasMore;
+        hasMoreRef.current = nextHasMore;
+        setHasMore(nextHasMore);
+      } catch (caughtError: unknown) {
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+        if (mode === "replace") {
+          productsRef.current = [];
+          setProducts([]);
+          setTotalCount(0);
+          offsetRef.current = 0;
+          hasMoreRef.current = false;
+          setHasMore(false);
+          setError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : "Не удалось загрузить каталог",
+          );
+        }
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setInitialLoading(false);
+          setLoadingMore(false);
+          loadingMoreRef.current = false;
+        }
+      }
+    },
+    [authLoading, category, debouncedQuery],
+  );
+
+  // Server fetch when filters or auth identity change (sale_price personalization).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keyed catalog page fetch
+    void loadPage("replace");
+  }, [loadPage, currentUserId]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || initialLoading || error || !hasMore) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadPage("append");
+        }
+      },
+      { root: null, rootMargin: "240px 0px", threshold: 0 },
+    );
+
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [error, hasMore, initialLoading, loadPage, products.length]);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -114,7 +286,7 @@ export default function CatalogPage() {
         >
           Все категории
         </button>
-        {catalog.categoryNames.map((item) => (
+        {categoryNames.map((item) => (
           <button
             key={item}
             type="button"
@@ -126,24 +298,44 @@ export default function CatalogPage() {
         ))}
       </div>
 
-      {catalog.loading ? (
+      {initialLoading ? (
         <p className="mt-10 text-center text-neutral-500">Загрузка каталога...</p>
-      ) : catalog.error ? (
+      ) : error ? (
         <p className="mt-10 text-center text-red-600">
           Не удалось загрузить каталог
         </p>
       ) : (
         <>
           <p className="mt-4 text-sm text-neutral-500">
-            Найдено товаров: {filteredProducts.length}
+            Найдено товаров: {totalCount}
           </p>
 
-          {filteredProducts.length > 0 ? (
-            <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredProducts.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
+          {products.length > 0 ? (
+            <>
+              <div className="mt-6 grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {products.map((product, index) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    imageLoading={index < 8 ? "eager" : "lazy"}
+                  />
+                ))}
+              </div>
+
+              <div ref={sentinelRef} className="h-8 w-full" aria-hidden />
+
+              {loadingMore ? (
+                <div className="mt-4 flex justify-center" role="status">
+                  <div className="h-8 w-full max-w-md animate-pulse rounded-md bg-neutral-100" />
+                </div>
+              ) : null}
+
+              {!hasMore && products.length > 0 ? (
+                <p className="mt-4 text-center text-xs text-neutral-400">
+                  Показаны все товары
+                </p>
+              ) : null}
+            </>
           ) : (
             <p className="mt-10 text-center text-neutral-500">
               По вашему запросу ничего не найдено.

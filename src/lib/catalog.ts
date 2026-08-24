@@ -147,6 +147,82 @@ export async function getCatalog(): Promise<CatalogProduct[]> {
   return sortCatalogByCategory((data as CatalogProduct[] | null) ?? []);
 }
 
+/** Default page size for storefront infinite scroll (24–40 range). */
+export const CATALOG_PAGE_SIZE = 32;
+
+export type CatalogPageRow = CatalogProduct & {
+  total_count: number;
+};
+
+export type CatalogPageResult = {
+  products: CatalogProduct[];
+  totalCount: number;
+  /** Next OFFSET for LIMIT/OFFSET pagination (currentOffset + page length). */
+  nextOffset: number;
+  hasMore: boolean;
+};
+
+/**
+ * One page of the storefront catalog (migration 046).
+ * Sort matches Stage 45; search/category are applied server-side before LIMIT/OFFSET.
+ */
+export async function getCatalogPage(options: {
+  limit?: number;
+  search?: string | null;
+  category?: string | null;
+  offset?: number;
+}): Promise<CatalogPageResult> {
+  const limit = Math.min(
+    Math.max(options.limit ?? CATALOG_PAGE_SIZE, 1),
+    100,
+  );
+  const offset = Math.max(options.offset ?? 0, 0);
+
+  const { data, error } = await supabase.rpc("get_catalog_page", {
+    p_limit: limit,
+    p_search: options.search?.trim() || null,
+    p_category: options.category?.trim() || null,
+    p_offset: offset,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить каталог");
+  }
+
+  const rows = (data as CatalogPageRow[] | null) ?? [];
+  const products: CatalogProduct[] = rows.map((row) => {
+    const { total_count: _ignored, ...product } = row;
+    void _ignored;
+    return product;
+  });
+  const totalCount = rows.length > 0 ? Number(rows[0].total_count) || 0 : 0;
+  const nextOffset = offset + products.length;
+
+  return {
+    products,
+    totalCount,
+    nextOffset,
+    // More rows exist when this page was full and we have not reached total_count.
+    hasMore:
+      products.length > 0
+      && nextOffset < totalCount,
+  };
+}
+
+/** Active top-level category names for storefront filter chips (046). */
+export async function getCatalogCategories(): Promise<string[]> {
+  const { data, error } = await supabase.rpc("get_catalog_categories");
+
+  if (error) {
+    throw new Error(error.message || "Не удалось загрузить категории");
+  }
+
+  const rows = (data as { category: string }[] | null) ?? [];
+  return rows
+    .map((row) => row.category)
+    .filter((name): name is string => typeof name === "string" && name.length > 0);
+}
+
 /**
  * Maps an RPC catalog row into the Product shape used by existing UI
  * (cards, cart, quantity/stock helpers).

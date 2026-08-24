@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Product } from "@/types/product";
 import { useCatalog } from "@/context/CatalogContext";
 import { useCart } from "@/context/CartContext";
@@ -38,11 +38,16 @@ function categoryButtonClass(isActive: boolean) {
 
 export default function QuickOrderClient() {
   const catalog = useCatalog();
+  const { ensureCatalogLoaded } = catalog;
   const { items: cartItems, addManyToCart } = useCart();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [selection, setSelection] = useState<QuickOrderSelection>({});
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    ensureCatalogLoaded();
+  }, [ensureCatalogLoaded]);
 
   const products = catalog.products;
   const categoryNames = catalog.categoryNames;

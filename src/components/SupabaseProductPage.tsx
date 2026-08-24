@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { useCatalog } from "@/context/CatalogContext";
 import ProductDetail from "@/components/ProductDetail";
 
@@ -12,7 +13,11 @@ const focusRing =
 // on the client instead of the static data file, then renders the exact
 // same ProductDetail component so the page looks identical either way.
 export default function SupabaseProductPage({ productId }: { productId: string }) {
-  const { products, loading, error } = useCatalog();
+  const { products, loading, error, ensureCatalogLoaded } = useCatalog();
+
+  useEffect(() => {
+    ensureCatalogLoaded();
+  }, [ensureCatalogLoaded]);
 
   if (loading) {
     return (

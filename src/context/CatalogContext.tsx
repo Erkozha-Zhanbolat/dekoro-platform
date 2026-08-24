@@ -16,6 +16,11 @@ interface CatalogContextValue {
   products: Product[];
   loading: boolean;
   error: string | null;
+  /**
+   * Ensures the full catalog is loaded (favorites, quick-order, product detail).
+   * Storefront /catalog uses getCatalogPage and must not call this.
+   */
+  ensureCatalogLoaded: () => void;
   refreshCatalog: () => Promise<void>;
 }
 
@@ -31,10 +36,16 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [loadedForUserId, setLoadedForUserId] = useState<string | null | undefined>(
     undefined,
   );
+  // Full catalog is opt-in so /catalog can paginate without downloading everything.
+  const [catalogRequested, setCatalogRequested] = useState(false);
+
+  const ensureCatalogLoaded = useCallback(() => {
+    setCatalogRequested(true);
+  }, []);
 
   useEffect(() => {
     // Re-fetch when auth identity settles/changes so sale_price personalizes.
-    if (authLoading || loadedForUserId === currentUserId) {
+    if (!catalogRequested || authLoading || loadedForUserId === currentUserId) {
       return;
     }
 
@@ -65,9 +76,10 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     return () => {
       ignore = true;
     };
-  }, [authLoading, currentUserId, loadedForUserId]);
+  }, [authLoading, catalogRequested, currentUserId, loadedForUserId]);
 
   const refreshCatalog = useCallback(async () => {
+    setCatalogRequested(true);
     try {
       const entries = await getCatalog();
       setProducts(entries.map(mapCatalogProductToProduct));
@@ -80,15 +92,24 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
           ? caughtError.message
           : "Не удалось загрузить каталог",
       );
+      setLoadedForUserId(currentUserId);
     }
   }, [currentUserId]);
 
-  const loading = authLoading || loadedForUserId !== currentUserId;
+  const loading =
+    catalogRequested && (authLoading || loadedForUserId !== currentUserId);
   const categoryNames = useMemo(() => deriveCategoryNames(products), [products]);
 
   const value = useMemo<CatalogContextValue>(
-    () => ({ categoryNames, products, loading, error, refreshCatalog }),
-    [categoryNames, products, loading, error, refreshCatalog],
+    () => ({
+      categoryNames,
+      products,
+      loading,
+      error,
+      ensureCatalogLoaded,
+      refreshCatalog,
+    }),
+    [categoryNames, products, loading, error, ensureCatalogLoaded, refreshCatalog],
   );
 
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;
