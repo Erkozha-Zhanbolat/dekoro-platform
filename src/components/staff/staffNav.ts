@@ -24,7 +24,7 @@ const STAFF_NAV_ITEMS: readonly StaffNavItem[] = [
   },
   {
     href: "/staff/analytics",
-    label: "Аналитика",
+    label: "Аналитика продаж",
     enabled: true,
     roles: ["admin"],
   },

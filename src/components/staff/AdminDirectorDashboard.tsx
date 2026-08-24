@@ -4,15 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatPrice } from "@/lib/formatPrice";
 import { StaffProductPhotoThumb } from "@/components/staff/StaffProductPhotoThumb";
-import {
-  CUSTOMER_TYPE_LABELS,
-  ORDER_STATUS_LABELS,
-  USER_ROLE_LABELS,
-} from "@/types/database";
-import type { OrderStatus, UserRole } from "@/types/database";
+import { ORDER_STATUS_LABELS } from "@/types/database";
+import type { OrderStatus } from "@/types/database";
 import {
   getAdminDashboardChart,
-  getAdminDashboardInventoryAlerts,
   getAdminDashboardManagers,
   getAdminDashboardRecentActivity,
   getAdminDashboardSummary,
@@ -22,15 +17,12 @@ import {
   type DashboardActivityItem,
   type DashboardChartPoint,
   type DashboardDateRange,
-  type DashboardInventoryAlerts,
   type DashboardManagers,
   type DashboardSummary,
   type DashboardTopCustomer,
   type DashboardTopProduct,
   type PeriodPreset,
 } from "@/lib/staff/dashboard";
-import { StaffTrafficDashboardBlock } from "@/components/staff/StaffTrafficDashboardBlock";
-import { StaffDataUsageDashboardBlock } from "@/components/staff/StaffDataUsageDashboardBlock";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -64,7 +56,6 @@ function formatRuDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) {
-    // date-only YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
       const [y, m, day] = iso.split("-");
       return `${day}.${m}.${y}`;
@@ -129,7 +120,7 @@ function SalesPaymentsChart({ points }: { points: DashboardChartPoint[] }) {
       <div className="flex flex-wrap gap-4 text-xs text-neutral-500">
         <span className="inline-flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#0F766E]" />
-          Продажи
+          Продажи с НДС
         </span>
         <span className="inline-flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sky-500" />
@@ -144,11 +135,18 @@ function SalesPaymentsChart({ points }: { points: DashboardChartPoint[] }) {
           {points.map((point) => {
             const salesH = Math.round((point.sales_amount / maxValue) * chartHeight);
             const payH = Math.round((point.payments_amount / maxValue) * chartHeight);
+            const tooltip = [
+              point.bucket_label,
+              `Продажи с НДС: ${formatPrice(point.sales_amount)}`,
+              `Без НДС: ${formatPrice(point.sales_net)}`,
+              `НДС: ${formatPrice(point.sales_vat)}`,
+              `Оплаты: ${formatPrice(point.payments_amount)}`,
+            ].join("\n");
             return (
               <div
                 key={point.bucket_date}
                 className="flex flex-1 flex-col items-center gap-1"
-                title={`${point.bucket_label}: продажи ${formatPrice(point.sales_amount)}, оплаты ${formatPrice(point.payments_amount)}`}
+                title={tooltip}
               >
                 <div
                   className="flex w-full items-end justify-center gap-0.5"
@@ -193,10 +191,6 @@ export default function AdminDirectorDashboard() {
     data: null,
     error: null,
   });
-  const [inventory, setInventory] = useState<BlockState<DashboardInventoryAlerts>>({
-    data: null,
-    error: null,
-  });
   const [customers, setCustomers] = useState<BlockState<DashboardTopCustomer[]>>({
     data: null,
     error: null,
@@ -213,7 +207,6 @@ export default function AdminDirectorDashboard() {
   const [loadedSummaryKey, setLoadedSummaryKey] = useState<string | undefined>();
   const [loadedChartKey, setLoadedChartKey] = useState<string | undefined>();
   const [loadedProductsKey, setLoadedProductsKey] = useState<string | undefined>();
-  const [loadedInventoryKey, setLoadedInventoryKey] = useState<string | undefined>();
   const [loadedCustomersKey, setLoadedCustomersKey] = useState<string | undefined>();
   const [loadedManagersKey, setLoadedManagersKey] = useState<string | undefined>();
   const [loadedActivityKey, setLoadedActivityKey] = useState<string | undefined>();
@@ -280,7 +273,7 @@ export default function AdminDirectorDashboard() {
         setLoadedChartKey(key);
       });
 
-    getAdminDashboardTopProducts(rangeForRpc)
+    getAdminDashboardTopProducts(rangeForRpc, 5)
       .then((data) => {
         if (ignore) return;
         setProducts({ data, error: null });
@@ -295,22 +288,7 @@ export default function AdminDirectorDashboard() {
         setLoadedProductsKey(key);
       });
 
-    getAdminDashboardInventoryAlerts()
-      .then((data) => {
-        if (ignore) return;
-        setInventory({ data, error: null });
-        setLoadedInventoryKey(key);
-      })
-      .catch((error: unknown) => {
-        if (ignore) return;
-        setInventory({
-          data: null,
-          error: error instanceof Error ? error.message : "Ошибка склада",
-        });
-        setLoadedInventoryKey(key);
-      });
-
-    getAdminDashboardTopCustomers(rangeForRpc)
+    getAdminDashboardTopCustomers(rangeForRpc, 5)
       .then((data) => {
         if (ignore) return;
         setCustomers({ data, error: null });
@@ -363,7 +341,6 @@ export default function AdminDirectorDashboard() {
   const summaryLoading = loadedSummaryKey !== periodKey;
   const chartLoading = loadedChartKey !== periodKey;
   const productsLoading = loadedProductsKey !== periodKey;
-  const inventoryLoading = loadedInventoryKey !== periodKey;
   const customersLoading = loadedCustomersKey !== periodKey;
   const managersLoading = loadedManagersKey !== periodKey;
   const activityLoading = loadedActivityKey !== periodKey;
@@ -381,39 +358,45 @@ export default function AdminDirectorDashboard() {
     ? [
         {
           key: "sales",
-          label: "Продажи",
-          value: formatPrice(summary.data.kpi.sales_amount),
-          hint: `${summary.data.kpi.sales_orders_count} заказов · сумма завершённых заказов по обязательству клиента, включая НДС, если выставлен счёт с НДС`,
+          label: "Продажи с НДС",
+          value: formatPrice(summary.data.kpi.sales_gross),
+          secondary: `Без НДС: ${formatPrice(summary.data.kpi.sales_net)} · НДС: ${formatPrice(summary.data.kpi.sales_vat)}`,
+          hint: undefined as string | undefined,
         },
         {
           key: "paid",
           label: "Оплачено",
           value: formatPrice(summary.data.kpi.payments_amount),
-          hint: "по дате оплаты",
+          secondary: undefined as string | undefined,
+          hint: undefined as string | undefined,
         },
         {
           key: "ar",
           label: "Дебиторка",
           value: formatPrice(summary.data.kpi.receivables_amount),
-          hint: "текущая",
+          secondary: undefined as string | undefined,
+          hint: "На текущий момент",
         },
         {
           key: "overdue",
           label: "Просрочено",
           value: formatPrice(summary.data.kpi.overdue_receivables_amount),
-          hint: "payment_due_at",
+          secondary: undefined as string | undefined,
+          hint: "На текущий момент",
         },
         {
           key: "new",
           label: "Новые заказы",
           value: String(summary.data.kpi.new_orders_count),
-          hint: "созданы в периоде",
+          secondary: undefined as string | undefined,
+          hint: "созданы в периоде · не продажи",
         },
         {
           key: "aov",
           label: "Средний чек",
           value: formatPrice(summary.data.kpi.average_order_value),
-          hint: "продажи / заказы",
+          secondary: `Без НДС: ${formatPrice(summary.data.kpi.average_order_value_net)}`,
+          hint: undefined as string | undefined,
         },
       ]
     : [];
@@ -498,15 +481,19 @@ export default function AdminDirectorDashboard() {
       ]
     : [];
 
+  const riskManagers =
+    managers.data?.managers.filter(
+      (m) =>
+        m.awaiting_payment > 0 || m.payment_overdue > 0 || m.stale_orders > 0,
+    ) ?? [];
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-800">
-            Dashboard руководителя
-          </h1>
+          <h1 className="text-2xl font-bold text-neutral-800">Главная</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            Мониторинг продаж, оплат и операций DEKORO · {periodLabel} · Asia/Almaty
+            Состояние бизнеса сейчас · {periodLabel} · Asia/Almaty
           </p>
         </div>
         <button
@@ -562,10 +549,6 @@ export default function AdminDirectorDashboard() {
         )}
       </div>
 
-      <StaffTrafficDashboardBlock />
-
-      <StaffDataUsageDashboardBlock />
-
       {/* KPI */}
       <section>
         <h2 className="mb-3 text-lg font-semibold text-neutral-800">Ключевые показатели</h2>
@@ -588,17 +571,15 @@ export default function AdminDirectorDashboard() {
                   {card.label}
                 </p>
                 <p className="mt-2 text-2xl font-bold text-neutral-800">{card.value}</p>
-                <p className="mt-1 text-xs text-neutral-400">{card.hint}</p>
+                {card.secondary && (
+                  <p className="mt-1 text-xs text-neutral-500">{card.secondary}</p>
+                )}
+                {card.hint && (
+                  <p className="mt-1 text-xs text-neutral-400">{card.hint}</p>
+                )}
               </div>
             ))}
           </div>
-        )}
-        {!summaryLoading && !summary.error && (
-          <p className="mt-3 text-xs text-neutral-400">
-            В продажи периода входят только заказы с записью перехода в «Завершён» в истории
-            статусов. Старые completed без history не учитываются (ограничение исторических
-            данных).
-          </p>
         )}
       </section>
 
@@ -618,7 +599,10 @@ export default function AdminDirectorDashboard() {
 
       {/* Statuses */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-neutral-800">Заказы по статусам</h2>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold text-neutral-800">Заказы по статусам</h2>
+          <p className="text-xs text-neutral-400">На текущий момент</p>
+        </div>
         {summaryLoading ? (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -643,9 +627,6 @@ export default function AdminDirectorDashboard() {
                   <p className="mt-1 text-xl font-bold text-neutral-800">
                     {row?.orders_count ?? 0}
                   </p>
-                  <p className="mt-0.5 text-xs text-neutral-500">
-                    {formatPrice(row?.amount_total ?? 0)}
-                  </p>
                 </Link>
               );
             })}
@@ -655,9 +636,12 @@ export default function AdminDirectorDashboard() {
 
       {/* Operational */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-neutral-800">
-          Операционные предупреждения
-        </h2>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold text-neutral-800">
+            Операционные предупреждения
+          </h2>
+          <p className="text-xs text-neutral-400">На текущий момент</p>
+        </div>
         {summaryLoading ? (
           <Skeleton className="h-40" />
         ) : summary.error ? (
@@ -683,191 +667,120 @@ export default function AdminDirectorDashboard() {
 
       {/* Top products */}
       <section className="rounded-lg border border-neutral-200 bg-white">
-        <div className="border-b border-neutral-200 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-5 py-4">
           <h2 className="text-lg font-semibold text-neutral-800">Топ товаров</h2>
-          <p className="mt-0.5 text-xs text-neutral-400">
-            Продажи товаров без НДС · сумма по позициям заказа (order_items.line_total),
-            без распределения НДС со счёта
-          </p>
+          <Link
+            href="/staff/analytics"
+            className={`text-sm font-medium text-[#0F766E] hover:text-[#0c5f58] ${focusRing}`}
+          >
+            Вся аналитика →
+          </Link>
         </div>
         <div className="p-5">
           {productsLoading ? (
-            <Skeleton className="h-40" />
+            <Skeleton className="h-32" />
           ) : products.error ? (
             <BlockError message={products.error} onRetry={retry} />
           ) : !products.data?.length ? (
             <p className="text-sm text-neutral-500">Нет продаж за период</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
-                    <th className="pb-2 pr-3">Товар</th>
-                    <th className="pb-2 pr-3">SKU</th>
-                    <th className="pb-2 pr-3 text-right">Кол-во</th>
-                    <th className="pb-2 pr-3 text-right">Сумма</th>
-                    <th className="pb-2 text-right">Заказы</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.data.map((product) => (
-                    <tr key={product.product_id} className="border-b border-neutral-100 last:border-0">
-                      <td className="py-3 pr-3">
-                        <Link
-                          href={`/staff/products/${product.product_id}`}
-                          className={`flex items-center gap-3 font-medium text-neutral-800 hover:text-[#0F766E] ${focusRing}`}
-                        >
-                          <StaffProductPhotoThumb
-                            path={product.main_photo_path}
-                            alt={product.product_name}
-                            className="h-10 w-10 shrink-0 rounded"
-                          />
-                          <span className="line-clamp-2">{product.product_name}</span>
-                        </Link>
-                      </td>
-                      <td className="py-3 pr-3 text-neutral-500">{product.product_sku}</td>
-                      <td className="py-3 pr-3 text-right text-neutral-700">
-                        {product.quantity_sold}
-                      </td>
-                      <td className="py-3 pr-3 text-right font-medium">
+            <ul className="flex flex-col gap-3">
+              {products.data.map((product) => (
+                <li key={product.product_id}>
+                  <Link
+                    href={`/staff/products/${product.product_id}`}
+                    className={`flex items-center gap-3 rounded-md border border-neutral-100 px-3 py-2.5 transition-colors hover:border-[#0F766E] ${focusRing}`}
+                  >
+                    <StaffProductPhotoThumb
+                      path={product.main_photo_path}
+                      alt={product.product_name}
+                      className="h-10 w-10 shrink-0 rounded"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-neutral-800">
+                        {product.product_name}
+                      </p>
+                      <p className="text-xs text-neutral-400">{product.product_sku}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-medium text-neutral-800">
                         {formatPrice(product.sales_amount)}
-                      </td>
-                      <td className="py-3 text-right text-neutral-600">
-                        {product.orders_count}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </p>
+                      <p className="text-xs text-neutral-400">
+                        {product.quantity_sold} шт · без НДС{" "}
+                        {formatPrice(product.sales_net)}
+                      </p>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
-      </section>
-
-      {/* Inventory */}
-      <section className="rounded-lg border border-neutral-200 bg-white">
-        <div className="border-b border-neutral-200 px-5 py-4">
-          <h2 className="text-lg font-semibold text-neutral-800">Остатки и риски</h2>
-        </div>
-        <div className="flex flex-col gap-6 p-5">
-          {inventoryLoading ? (
-            <Skeleton className="h-40" />
-          ) : inventory.error ? (
-            <BlockError message={inventory.error} onRetry={retry} />
-          ) : inventory.data ? (
-            <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="rounded-md bg-neutral-50 p-4">
-                  <p className="text-xs uppercase tracking-wide text-neutral-400">
-                    Зарезервировано
-                  </p>
-                  <p className="mt-1 text-xl font-bold text-neutral-800">
-                    {inventory.data.reserved_quantity_total}
-                  </p>
-                </div>
-                <div className="rounded-md bg-neutral-50 p-4">
-                  <p className="text-xs uppercase tracking-wide text-neutral-400">
-                    Товары с резервами
-                  </p>
-                  <p className="mt-1 text-xl font-bold text-neutral-800">
-                    {inventory.data.products_with_active_reserves}
-                  </p>
-                </div>
-              </div>
-              <InventoryList
-                title="Нулевой доступный остаток"
-                items={inventory.data.zero_available}
-              />
-              <InventoryList
-                title="Ниже минимального заказа"
-                items={inventory.data.below_min_order}
-              />
-              <InventoryList
-                title="Самые низкие остатки"
-                items={inventory.data.lowest_stock}
-                showReserved
-              />
-            </>
-          ) : null}
         </div>
       </section>
 
       {/* Top customers */}
       <section className="rounded-lg border border-neutral-200 bg-white">
-        <div className="border-b border-neutral-200 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-5 py-4">
           <h2 className="text-lg font-semibold text-neutral-800">Топ клиентов</h2>
+          <Link
+            href="/staff/analytics"
+            className={`text-sm font-medium text-[#0F766E] hover:text-[#0c5f58] ${focusRing}`}
+          >
+            Вся аналитика →
+          </Link>
         </div>
         <div className="p-5">
           {customersLoading ? (
-            <Skeleton className="h-40" />
+            <Skeleton className="h-32" />
           ) : customers.error ? (
             <BlockError message={customers.error} onRetry={retry} />
           ) : !customers.data?.length ? (
             <p className="text-sm text-neutral-500">Нет завершённых заказов за период</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
-                    <th className="pb-2 pr-3">Клиент</th>
-                    <th className="pb-2 pr-3">Тип</th>
-                    <th className="pb-2 pr-3 text-right">Заказы</th>
-                    <th className="pb-2 pr-3 text-right">Продажи</th>
-                    <th className="pb-2 pr-3 text-right">Оплачено</th>
-                    <th className="pb-2 pr-3 text-right">Долг</th>
-                    <th className="pb-2">Последний</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {customers.data.map((customer) => (
-                    <tr key={customer.customer_id} className="border-b border-neutral-100 last:border-0">
-                      <td className="py-3 pr-3">
-                        <Link
-                          href={`/staff/customers/${customer.customer_id}`}
-                          className={`font-medium text-neutral-800 hover:text-[#0F766E] ${focusRing}`}
-                        >
-                          {customer.display_name}
-                        </Link>
-                      </td>
-                      <td className="py-3 pr-3 text-neutral-500">
-                        {CUSTOMER_TYPE_LABELS[customer.customer_type]}
-                      </td>
-                      <td className="py-3 pr-3 text-right">{customer.orders_count}</td>
-                      <td className="py-3 pr-3 text-right font-medium">
-                        {formatPrice(customer.sales_amount)}
-                      </td>
-                      <td className="py-3 pr-3 text-right">
-                        {formatPrice(customer.payments_amount)}
-                      </td>
-                      <td className="py-3 pr-3 text-right">
-                        {formatPrice(customer.receivables_amount)}
-                      </td>
-                      <td className="py-3 text-neutral-500">
-                        {formatRuDate(customer.last_order_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="flex flex-col gap-3">
+              {customers.data.map((customer) => (
+                <li key={customer.customer_id}>
+                  <Link
+                    href={`/staff/customers/${customer.customer_id}`}
+                    className={`flex items-center justify-between gap-3 rounded-md border border-neutral-100 px-3 py-2.5 transition-colors hover:border-[#0F766E] ${focusRing}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-neutral-800">
+                        {customer.display_name}
+                      </p>
+                      <p className="text-xs text-neutral-400">
+                        {customer.orders_count} заказов
+                        {customer.receivables_amount > 0
+                          ? ` · долг ${formatPrice(customer.receivables_amount)}`
+                          : ""}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-medium text-neutral-800">
+                      {formatPrice(customer.sales_amount)}
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </section>
 
-      {/* Managers */}
+      {/* Managers — risks only */}
       <section className="rounded-lg border border-neutral-200 bg-white">
         <div className="border-b border-neutral-200 px-5 py-4">
           <h2 className="text-lg font-semibold text-neutral-800">Менеджеры</h2>
           <p className="mt-0.5 text-xs text-neutral-400">
-            Операционный обзор, не KPI для зарплаты
+            Только риски
             {managers.data
               ? ` · без движения > ${managers.data.stale_days_threshold} дн.`
               : ""}
           </p>
         </div>
-        <div className="flex flex-col gap-4 p-5">
+        <div className="flex flex-col gap-3 p-5">
           {managersLoading ? (
-            <Skeleton className="h-40" />
+            <Skeleton className="h-24" />
           ) : managers.error ? (
             <BlockError message={managers.error} onRetry={retry} />
           ) : managers.data ? (
@@ -881,59 +794,37 @@ export default function AdminDirectorDashboard() {
                   {formatPrice(managers.data.unassigned.amount_total)}
                 </Link>
               )}
-              {!managers.data.managers.length ? (
-                <p className="text-sm text-neutral-500">Нет активных менеджеров</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[800px] text-sm">
-                    <thead>
-                      <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
-                        <th className="pb-2 pr-3">Менеджер</th>
-                        <th className="pb-2 pr-3 text-right">Открытые</th>
-                        <th className="pb-2 pr-3 text-right">Завершено</th>
-                        <th className="pb-2 pr-3 text-right">Продажи</th>
-                        <th className="pb-2 pr-3 text-right">Ждут оплаты</th>
-                        <th className="pb-2 pr-3 text-right">Просрочено</th>
-                        <th className="pb-2 text-right">Без движения</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {managers.data.managers.map((manager) => (
-                        <tr
-                          key={manager.manager_id}
-                          className="border-b border-neutral-100 last:border-0"
-                        >
-                          <td className="py-3 pr-3">
-                            <p className="font-medium text-neutral-800">
-                              {manager.full_name}
-                            </p>
-                            <p className="text-xs text-neutral-400">
-                              {USER_ROLE_LABELS[manager.role as UserRole] ?? manager.role}
-                              {manager.email ? ` · ${manager.email}` : ""}
-                            </p>
-                          </td>
-                          <td className="py-3 pr-3 text-right">
-                            {manager.assigned_open_orders}
-                          </td>
-                          <td className="py-3 pr-3 text-right">
-                            {manager.completed_in_period}
-                          </td>
-                          <td className="py-3 pr-3 text-right font-medium">
-                            {formatPrice(manager.sales_amount)}
-                          </td>
-                          <td className="py-3 pr-3 text-right">
-                            {manager.awaiting_payment}
-                          </td>
-                          <td className="py-3 pr-3 text-right">
-                            {manager.payment_overdue}
-                          </td>
-                          <td className="py-3 text-right">{manager.stale_orders}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {!riskManagers.length && managers.data.unassigned.orders_count === 0 ? (
+                <p className="text-sm text-neutral-500">Рисков нет</p>
+              ) : riskManagers.length > 0 ? (
+                <ul className="flex flex-col gap-2">
+                  {riskManagers.map((manager) => {
+                    const parts: string[] = [];
+                    if (manager.awaiting_payment > 0) {
+                      parts.push(`ждут оплаты ${manager.awaiting_payment}`);
+                    }
+                    if (manager.payment_overdue > 0) {
+                      parts.push(`просрочено ${manager.payment_overdue}`);
+                    }
+                    if (manager.stale_orders > 0) {
+                      parts.push(`без движения ${manager.stale_orders}`);
+                    }
+                    return (
+                      <li
+                        key={manager.manager_id}
+                        className="rounded-md border border-neutral-100 px-3 py-2.5"
+                      >
+                        <p className="text-sm font-medium text-neutral-800">
+                          {manager.full_name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-neutral-500">
+                          {parts.join(" · ")}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -979,54 +870,6 @@ export default function AdminDirectorDashboard() {
           )}
         </div>
       </section>
-    </div>
-  );
-}
-
-function InventoryList({
-  title,
-  items,
-  showReserved,
-}: {
-  title: string;
-  items: DashboardInventoryAlerts["zero_available"];
-  showReserved?: boolean;
-}) {
-  return (
-    <div>
-      <h3 className="mb-2 text-sm font-semibold text-neutral-700">{title}</h3>
-      {!items.length ? (
-        <p className="text-sm text-neutral-500">Нет позиций</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {items.slice(0, 8).map((item) => (
-            <li key={`${title}-${item.product_id}`}>
-              <Link
-                href={`/staff/products/${item.product_id}`}
-                className={`flex items-center gap-3 rounded-md border border-neutral-100 px-3 py-2 transition-colors hover:border-[#0F766E] ${focusRing}`}
-              >
-                <StaffProductPhotoThumb
-                  path={item.main_photo_path}
-                  alt={item.name}
-                  className="h-9 w-9 shrink-0 rounded"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-neutral-800">
-                    {item.name}
-                  </p>
-                  <p className="text-xs text-neutral-400">{item.sku}</p>
-                </div>
-                <div className="shrink-0 text-right text-xs text-neutral-600">
-                  <p>дост. {item.available_quantity}</p>
-                  {showReserved && item.reserved_quantity != null && (
-                    <p className="text-neutral-400">рез. {item.reserved_quantity}</p>
-                  )}
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

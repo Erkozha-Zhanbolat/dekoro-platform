@@ -2,8 +2,9 @@ import { supabase } from "@/lib/supabase/client";
 import type { CustomerType, OrderStatus } from "@/types/database";
 
 /**
- * Admin director dashboard (supabase/migrations/025_admin_dashboard.sql).
+ * Admin director dashboard (025 + 027b + 048_sales_analytics).
  * Active admin only — other roles receive RPC denial.
+ * Sales = completed events; VAT from invoice metadata snapshots.
  */
 
 export type DashboardPeriod = {
@@ -13,13 +14,18 @@ export type DashboardPeriod = {
 };
 
 export type DashboardKpi = {
+  /** Gross completed sales (with VAT). Alias of sales_gross. */
   sales_amount: number;
+  sales_net: number;
+  sales_vat: number;
+  sales_gross: number;
   sales_orders_count: number;
   payments_amount: number;
   receivables_amount: number;
   overdue_receivables_amount: number;
   new_orders_count: number;
   average_order_value: number;
+  average_order_value_net: number;
 };
 
 export type DashboardStatusRow = {
@@ -58,7 +64,10 @@ export type DashboardChartPoint = {
   bucket_date: string;
   bucket_label: string;
   granularity: "day" | "week" | "month";
+  /** Gross sales (with VAT). */
   sales_amount: number;
+  sales_net: number;
+  sales_vat: number;
   payments_amount: number;
   orders_count: number;
 };
@@ -69,7 +78,10 @@ export type DashboardTopProduct = {
   product_name: string;
   main_photo_path: string | null;
   quantity_sold: number;
+  /** Gross sales (with VAT). */
   sales_amount: number;
+  sales_net: number;
+  sales_vat: number;
   orders_count: number;
 };
 
@@ -96,7 +108,10 @@ export type DashboardTopCustomer = {
   customer_type: CustomerType;
   display_name: string;
   orders_count: number;
+  /** Gross (с НДС). */
   sales_amount: number;
+  sales_net: number;
+  sales_vat: number;
   payments_amount: number;
   receivables_amount: number;
   last_order_at: string | null;
@@ -177,13 +192,17 @@ function mapSummary(raw: Record<string, unknown>): DashboardSummary {
       day_span: int(period.day_span),
     },
     kpi: {
-      sales_amount: num(kpi.sales_amount),
+      sales_amount: num(kpi.sales_amount ?? kpi.sales_gross),
+      sales_net: num(kpi.sales_net),
+      sales_vat: num(kpi.sales_vat),
+      sales_gross: num(kpi.sales_gross ?? kpi.sales_amount),
       sales_orders_count: int(kpi.sales_orders_count),
       payments_amount: num(kpi.payments_amount),
       receivables_amount: num(kpi.receivables_amount),
       overdue_receivables_amount: num(kpi.overdue_receivables_amount),
       new_orders_count: int(kpi.new_orders_count),
       average_order_value: num(kpi.average_order_value),
+      average_order_value_net: num(kpi.average_order_value_net),
     },
     statuses: statuses.map((item) => {
       const row = item as Record<string, unknown>;
@@ -303,6 +322,8 @@ export async function getAdminDashboardChart(
     bucket_label: String(row.bucket_label ?? ""),
     granularity: row.granularity as DashboardChartPoint["granularity"],
     sales_amount: num(row.sales_amount),
+    sales_net: num(row.sales_net),
+    sales_vat: num(row.sales_vat),
     payments_amount: num(row.payments_amount),
     orders_count: int(row.orders_count),
   }));
@@ -329,6 +350,8 @@ export async function getAdminDashboardTopProducts(
     main_photo_path: (row.main_photo_path as string | null) ?? null,
     quantity_sold: num(row.quantity_sold),
     sales_amount: num(row.sales_amount),
+    sales_net: num(row.sales_net),
+    sales_vat: num(row.sales_vat),
     orders_count: int(row.orders_count),
   }));
 }
@@ -371,6 +394,8 @@ export async function getAdminDashboardTopCustomers(
     display_name: String(row.display_name ?? ""),
     orders_count: int(row.orders_count),
     sales_amount: num(row.sales_amount),
+    sales_net: num(row.sales_net),
+    sales_vat: num(row.sales_vat),
     payments_amount: num(row.payments_amount),
     receivables_amount: num(row.receivables_amount),
     last_order_at: (row.last_order_at as string | null) ?? null,
