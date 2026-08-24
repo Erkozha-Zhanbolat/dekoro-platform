@@ -338,6 +338,20 @@ export function canAccessProcurement(role: UserRole | null | undefined): boolean
   return role === "admin" || role === "manager";
 }
 
+/** Inventory balance report («Остатки») — admin, manager, warehouse. Read-only. */
+export function canAccessInventoryBalance(
+  role: UserRole | null | undefined,
+): boolean {
+  return role === "admin" || role === "manager" || role === "warehouse";
+}
+
+/** Excel export for Остатки — admin + manager (warehouse is view-only). */
+export function canExportInventoryBalance(
+  role: UserRole | null | undefined,
+): boolean {
+  return role === "admin" || role === "manager";
+}
+
 export function canReadProducts(role: UserRole | null | undefined): boolean {
   return role === "admin" || role === "manager" || role === "warehouse";
 }
