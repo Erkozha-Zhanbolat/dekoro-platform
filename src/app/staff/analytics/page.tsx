@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
 import { formatPrice } from "@/lib/formatPrice";
@@ -23,7 +23,6 @@ import {
   type SalesAnalyticsSummary,
   type SalesComparisonMetric,
 } from "@/lib/staff/salesAnalytics";
-import { CUSTOMER_TYPE_LABELS } from "@/types/database";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -54,6 +53,44 @@ function formatQty(value: number): string {
   return new Intl.NumberFormat("ru-RU").format(value);
 }
 
+function formatSharePct(value: number): string {
+  return `${new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 0,
+  }).format(value)}%`;
+}
+
+/** Primary gross sales + muted VAT (and optional share) breakdown. */
+function SalesAmount({
+  gross,
+  vat,
+  sharePct,
+  shareSuffix,
+  align = "right",
+}: {
+  gross: number;
+  vat: number;
+  sharePct?: number;
+  shareSuffix?: string;
+  align?: "left" | "right";
+}) {
+  const vatParts = [`в т.ч. НДС ${formatPrice(vat)}`];
+  if (sharePct != null && shareSuffix) {
+    vatParts.push(`${formatSharePct(sharePct)} ${shareSuffix}`);
+  }
+
+  return (
+    <div className={align === "right" ? "text-right" : "text-left"}>
+      <p className="font-semibold tabular-nums text-neutral-800">
+        {formatPrice(gross)}
+      </p>
+      <p className="mt-0.5 text-xs tabular-nums text-neutral-500">
+        {vatParts.join(" · ")}
+      </p>
+    </div>
+  );
+}
+
 function ComparisonChip({
   metric,
   formatValue,
@@ -73,12 +110,13 @@ function ComparisonChip({
             ? "bg-red-50 text-red-700"
             : "bg-neutral-50 text-neutral-600"
       }`}
-      title={`${formatValue(metric.previous)} → ${formatValue(metric.current)}`}
     >
       <span className="font-medium">{pct}</span>
-      <span className="text-[11px] opacity-80">
-        {formatValue(metric.previous)} → {formatValue(metric.current)}
-      </span>
+      {metric.has_baseline ? (
+        <span className="text-[11px] opacity-80">
+          предыдущий период: {formatValue(metric.previous)}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -92,7 +130,7 @@ function MetricCard({
 }: {
   label: string;
   value: string;
-  secondary?: string;
+  secondary?: ReactNode;
   comparison?: SalesComparisonMetric;
   formatComparisonValue?: (n: number) => string;
 }) {
@@ -103,7 +141,7 @@ function MetricCard({
       </p>
       <p className="mt-2 text-2xl font-bold tabular-nums text-neutral-800">{value}</p>
       {secondary ? (
-        <p className="mt-1 text-xs text-neutral-500">{secondary}</p>
+        <div className="mt-1 space-y-0.5 text-xs text-neutral-500">{secondary}</div>
       ) : null}
       {comparison && formatComparisonValue ? (
         <ComparisonChip metric={comparison} formatValue={formatComparisonValue} />
@@ -132,11 +170,10 @@ function SalesChart({ points }: { points: SalesAnalyticsChartPoint[] }) {
           const h = Math.round((point.sales_gross / maxValue) * chartHeight);
           const tooltip = [
             point.bucket_label,
-            `С НДС: ${formatPrice(point.sales_gross)}`,
-            `Без НДС: ${formatPrice(point.sales_net)}`,
-            `НДС: ${formatPrice(point.sales_vat)}`,
-            `Заказы: ${point.orders_count}`,
-            `Кол-во: ${formatQty(point.quantity_sold)}`,
+            `Продажи: ${formatPrice(point.sales_gross)}`,
+            `в т.ч. НДС: ${formatPrice(point.sales_vat)}`,
+            `Заказов: ${point.orders_count}`,
+            `Продано: ${formatQty(point.quantity_sold)} шт.`,
           ].join("\n");
           return (
             <div
@@ -299,6 +336,12 @@ export default function StaffAnalyticsPage() {
           <p className="mt-1 text-sm text-neutral-500">
             Продажи, товары и клиенты · {periodLabel} · Asia/Almaty
           </p>
+          <p
+            className="mt-1.5 text-xs text-neutral-400"
+            title="Продажи показаны с НДС. Сумма НДС указана отдельно."
+          >
+            Продажи показаны с НДС. Сумма НДС указана отдельно.
+          </p>
         </div>
         <button
           type="button"
@@ -367,9 +410,14 @@ export default function StaffAnalyticsPage() {
             </h2>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               <MetricCard
-                label="Продажи с НДС"
+                label="Продажи"
                 value={formatPrice(summary.kpi.sales_gross)}
-                secondary={`Без НДС: ${formatPrice(summary.kpi.sales_net)} · НДС: ${formatPrice(summary.kpi.sales_vat)}`}
+                secondary={
+                  <>
+                    <p>без НДС {formatPrice(summary.kpi.sales_net)}</p>
+                    <p>в т.ч. НДС {formatPrice(summary.kpi.sales_vat)}</p>
+                  </>
+                }
                 comparison={summary.comparison.sales_gross}
                 formatComparisonValue={formatPrice}
               />
@@ -380,10 +428,10 @@ export default function StaffAnalyticsPage() {
                 formatComparisonValue={(n) => String(Math.trunc(n))}
               />
               <MetricCard
-                label="Продано единиц"
-                value={formatQty(summary.kpi.quantity_sold)}
+                label="Продано"
+                value={`${formatQty(summary.kpi.quantity_sold)} шт.`}
                 comparison={summary.comparison.quantity_sold}
-                formatComparisonValue={formatQty}
+                formatComparisonValue={(n) => `${formatQty(n)} шт.`}
               />
               <MetricCard
                 label="Средний чек"
@@ -407,13 +455,15 @@ export default function StaffAnalyticsPage() {
 
           <section className="rounded-lg border border-neutral-200 bg-white">
             <div className="border-b border-neutral-200 px-5 py-4">
-              <h2 className="text-lg font-semibold text-neutral-800">Товары</h2>
+              <h2 className="text-lg font-semibold text-neutral-800">
+                Продажи по товарам
+              </h2>
             </div>
             <div className="overflow-x-auto p-5">
               {sortedProducts.length === 0 ? (
                 <p className="text-sm text-neutral-500">Нет продаж за период</p>
               ) : (
-                <table className="w-full min-w-[900px] text-sm">
+                <table className="w-full min-w-[640px] text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200">
                       <th className="pb-2 pr-3 text-left text-xs uppercase tracking-wide text-neutral-400">
@@ -426,32 +476,23 @@ export default function StaffAnalyticsPage() {
                         Категория
                       </th>
                       <SortHeader
-                        label="Кол-во"
+                        label="Продано"
                         active={productSort === "quantity_sold"}
                         onClick={() => setProductSort("quantity_sold")}
                         align="right"
                       />
                       <SortHeader
-                        label="Заказы"
+                        label="Заказов"
                         active={productSort === "orders_count"}
                         onClick={() => setProductSort("orders_count")}
                         align="right"
                       />
-                      <th className="pb-2 pr-3 text-right text-xs uppercase tracking-wide text-neutral-400">
-                        Без НДС
-                      </th>
-                      <th className="pb-2 pr-3 text-right text-xs uppercase tracking-wide text-neutral-400">
-                        НДС
-                      </th>
                       <SortHeader
-                        label="С НДС"
+                        label="Продажи"
                         active={productSort === "sales_gross"}
                         onClick={() => setProductSort("sales_gross")}
                         align="right"
                       />
-                      <th className="pb-2 text-right text-xs uppercase tracking-wide text-neutral-400">
-                        Доля
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -470,23 +511,19 @@ export default function StaffAnalyticsPage() {
                           </Link>
                         </td>
                         <td className="py-3 pr-3 text-neutral-500">{row.category_name}</td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
-                          {formatQty(row.quantity_sold)}
+                        <td className="py-3 pr-3 text-right tabular-nums text-neutral-800">
+                          {formatQty(row.quantity_sold)} шт.
                         </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
+                        <td className="py-3 pr-3 text-right tabular-nums text-neutral-800">
                           {row.orders_count}
                         </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
-                          {formatPrice(row.sales_net)}
-                        </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
-                          {formatPrice(row.sales_vat)}
-                        </td>
-                        <td className="py-3 pr-3 text-right font-medium tabular-nums">
-                          {formatPrice(row.sales_gross)}
-                        </td>
-                        <td className="py-3 text-right tabular-nums text-neutral-600">
-                          {row.share_pct}%
+                        <td className="py-3">
+                          <SalesAmount
+                            gross={row.sales_gross}
+                            vat={row.sales_vat}
+                            sharePct={row.share_pct}
+                            shareSuffix="продаж"
+                          />
                         </td>
                       </tr>
                     ))}
@@ -504,15 +541,12 @@ export default function StaffAnalyticsPage() {
               {categories.length === 0 ? (
                 <p className="text-sm text-neutral-500">Нет данных</p>
               ) : (
-                <table className="w-full min-w-[640px] text-sm">
+                <table className="w-full min-w-[420px] text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
                       <th className="pb-2 pr-3">Категория</th>
-                      <th className="pb-2 pr-3 text-right">Кол-во</th>
-                      <th className="pb-2 pr-3 text-right">Без НДС</th>
-                      <th className="pb-2 pr-3 text-right">НДС</th>
-                      <th className="pb-2 pr-3 text-right">С НДС</th>
-                      <th className="pb-2 text-right">Доля</th>
+                      <th className="pb-2 pr-3 text-right">Продано</th>
+                      <th className="pb-2 text-right">Продажи</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -524,20 +558,16 @@ export default function StaffAnalyticsPage() {
                         <td className="py-3 pr-3 font-medium text-neutral-800">
                           {row.category_name}
                         </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
-                          {formatQty(row.quantity_sold)}
+                        <td className="py-3 pr-3 text-right tabular-nums text-neutral-800">
+                          {formatQty(row.quantity_sold)} шт.
                         </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
-                          {formatPrice(row.sales_net)}
-                        </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
-                          {formatPrice(row.sales_vat)}
-                        </td>
-                        <td className="py-3 pr-3 text-right font-medium tabular-nums">
-                          {formatPrice(row.sales_gross)}
-                        </td>
-                        <td className="py-3 text-right tabular-nums text-neutral-600">
-                          {row.share_pct}%
+                        <td className="py-3">
+                          <SalesAmount
+                            gross={row.sales_gross}
+                            vat={row.sales_vat}
+                            sharePct={row.share_pct}
+                            shareSuffix="всех продаж"
+                          />
                         </td>
                       </tr>
                     ))}
@@ -555,16 +585,13 @@ export default function StaffAnalyticsPage() {
               {customers.length === 0 ? (
                 <p className="text-sm text-neutral-500">Нет данных</p>
               ) : (
-                <table className="w-full min-w-[800px] text-sm">
+                <table className="w-full min-w-[560px] text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
                       <th className="pb-2 pr-3">Клиент</th>
-                      <th className="pb-2 pr-3">Тип</th>
-                      <th className="pb-2 pr-3 text-right">Заказы</th>
-                      <th className="pb-2 pr-3 text-right">Без НДС</th>
-                      <th className="pb-2 pr-3 text-right">НДС</th>
-                      <th className="pb-2 pr-3 text-right">С НДС</th>
-                      <th className="pb-2 pr-3 text-right">Ср. чек</th>
+                      <th className="pb-2 pr-3 text-right">Заказов</th>
+                      <th className="pb-2 pr-3 text-right">Продажи</th>
+                      <th className="pb-2 pr-3 text-right">Средний чек</th>
                       <th className="pb-2 text-right">Долг</th>
                     </tr>
                   </thead>
@@ -582,25 +609,19 @@ export default function StaffAnalyticsPage() {
                             {row.display_name}
                           </Link>
                         </td>
-                        <td className="py-3 pr-3 text-neutral-500">
-                          {CUSTOMER_TYPE_LABELS[row.customer_type]}
-                        </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
+                        <td className="py-3 pr-3 text-right tabular-nums text-neutral-800">
                           {row.orders_count}
                         </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
-                          {formatPrice(row.sales_net)}
+                        <td className="py-3 pr-3">
+                          <SalesAmount
+                            gross={row.sales_gross}
+                            vat={row.sales_vat}
+                          />
                         </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
-                          {formatPrice(row.sales_vat)}
-                        </td>
-                        <td className="py-3 pr-3 text-right font-medium tabular-nums">
-                          {formatPrice(row.sales_gross)}
-                        </td>
-                        <td className="py-3 pr-3 text-right tabular-nums">
+                        <td className="py-3 pr-3 text-right tabular-nums text-neutral-800">
                           {formatPrice(row.average_order_value)}
                         </td>
-                        <td className="py-3 text-right tabular-nums">
+                        <td className="py-3 text-right tabular-nums text-neutral-800">
                           {row.receivables_amount > 0
                             ? formatPrice(row.receivables_amount)
                             : "—"}
