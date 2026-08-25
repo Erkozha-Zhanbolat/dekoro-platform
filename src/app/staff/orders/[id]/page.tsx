@@ -2,15 +2,18 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { DELIVERY_TYPE_LABELS } from "@/lib/orders";
 import {
   addStaffOrderNote,
   assignStaffOrderManager,
   cancelStaffOrder,
   canStaffCancelOrder,
+  canStaffFastCompleteOrder,
   changeStaffOrderStatus,
+  fastCompleteStaffOrder,
   getAllowedStatusTransitions,
+  getFastCompleteRemainingSteps,
   getStaffOrderById,
   getStatusTransitionLabel,
   isDeadlineOverdue,
@@ -52,6 +55,7 @@ import {
   type OrderStatus,
 } from "@/types/database";
 import { useProfile } from "@/context/ProfileContext";
+import { useToast } from "@/context/ToastContext";
 import StaffAddOrderItemModal from "@/components/staff/StaffAddOrderItemModal";
 import StaffOrderPaymentSection from "@/components/staff/StaffOrderPaymentSection";
 
@@ -90,10 +94,27 @@ function fromDatetimeLocalValue(value: string): string | null {
   return date.toISOString();
 }
 
+function friendlyFastCompleteError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    const message = error.message.trim();
+    // Avoid dumping PostgREST / postgres internals into the toast.
+    if (
+      /permission denied|JWT|PGRST|syntax error|violates|stack depth/i.test(message) ||
+      message.length > 280
+    ) {
+      return "Проверьте оплату, сборку, резерв и накладную, затем повторите.";
+    }
+    return message;
+  }
+  return "Проверьте оплату, сборку, резерв и накладную, затем повторите.";
+}
+
 export default function StaffOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
   const { profile } = useProfile();
+  const toast = useToast();
+  const fastCompleteTitleId = useId();
 
   const [order, setOrder] = useState<StaffOrderDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -103,6 +124,7 @@ export default function StaffOrderDetailPage() {
   const [overrideItem, setOverrideItem] = useState<StaffOrderDetailItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [fastCompleteConfirmOpen, setFastCompleteConfirmOpen] = useState(false);
   const [managers, setManagers] = useState<StaffManagerOption[]>([]);
 
   const [managerDraft, setManagerDraft] = useState("");
@@ -230,6 +252,14 @@ export default function StaffOrderDetailPage() {
     (order.status === "paid" ||
       order.status === "picking" ||
       order.status === "ready_for_shipment");
+  const canFastComplete =
+    order != null &&
+    canStaffFastCompleteOrder({
+      status: order.status,
+      role: profile?.role,
+      hasItems: order.items.length > 0,
+    });
+  const fastCompleteSteps = order ? getFastCompleteRemainingSteps(order.status) : [];
 
   const paymentOverdue =
     order != null &&
@@ -261,6 +291,40 @@ export default function StaffOrderDetailPage() {
       await refetchOrder();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Не удалось изменить статус");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleFastCompleteConfirm() {
+    if (!order || actionBusy || !canFastComplete) {
+      return;
+    }
+
+    setFastCompleteConfirmOpen(false);
+    setActionBusy(true);
+    setActionError(null);
+
+    try {
+      // Ship requires a generated delivery note (staff_ship_order guard).
+      // Ensure it exists before the transactional orchestration RPC.
+      const needsShip = fastCompleteSteps.includes("shipped");
+      const hasGeneratedDeliveryNote =
+        deliveryNoteDoc != null && deliveryNoteDoc.status === "generated";
+
+      if (needsShip && !hasGeneratedDeliveryNote) {
+        const settings = await getOrganizationSettings();
+        await generateStaffDeliveryNote(order.id, settings.default_tax_mode);
+        await refetchDocuments();
+      }
+
+      await fastCompleteStaffOrder(order.id);
+      await refetchOrder();
+      toast.success("Заказ завершён", "Все этапы выполнены автоматически");
+    } catch (error) {
+      const message = friendlyFastCompleteError(error);
+      setActionError(message);
+      toast.error("Не удалось быстро завершить заказ", message);
     } finally {
       setActionBusy(false);
     }
@@ -557,7 +621,7 @@ export default function StaffOrderDetailPage() {
         </div>
       )}
 
-      {canManageWorkflow && (transitions.length > 0 || canCancel) && (
+      {canManageWorkflow && (transitions.length > 0 || canCancel || canFastComplete) && (
         <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-neutral-800">Действия по заказу</h2>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -584,6 +648,16 @@ export default function StaffOrderDetailPage() {
                 {getStatusTransitionLabel(order.status, nextStatus)}
               </button>
             ))}
+            {canFastComplete && (
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => setFastCompleteConfirmOpen(true)}
+                className={`rounded-md border border-[#0F766E]/40 bg-white px-4 py-2 text-sm font-medium text-[#0F766E] transition-colors hover:bg-[#0F766E]/5 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 ${focusRing}`}
+              >
+                Быстро завершить
+              </button>
+            )}
             {canCancel && (
               <button
                 type="button"
@@ -602,6 +676,68 @@ export default function StaffOrderDetailPage() {
             </p>
           )}
         </section>
+      )}
+
+      {fastCompleteConfirmOpen && order && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={fastCompleteTitleId}
+          onClick={() => {
+            if (!actionBusy) {
+              setFastCompleteConfirmOpen(false);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-5 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id={fastCompleteTitleId} className="text-lg font-semibold text-neutral-800">
+              Быстро завершить заказ?
+            </h3>
+            <p className="mt-2 text-sm text-neutral-700">
+              Все оставшиеся этапы будут выполнены автоматически:
+            </p>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-neutral-700">
+              {fastCompleteSteps.includes("picking") ||
+              fastCompleteSteps.includes("ready_for_shipment") ? (
+                <li>сборка (все позиции будут отмечены как собранные)</li>
+              ) : null}
+              {fastCompleteSteps.includes("ready_for_shipment") ? (
+                <li>готовность к отгрузке</li>
+              ) : null}
+              {fastCompleteSteps.includes("shipped") ? <li>отгрузка</li> : null}
+              {fastCompleteSteps.includes("completed") ? <li>завершение заказа</li> : null}
+            </ul>
+            <p className="mt-3 text-sm text-neutral-600">
+              После выполнения складские остатки и история заказа будут обновлены.
+              {fastCompleteSteps.includes("shipped") &&
+              !(deliveryNoteDoc != null && deliveryNoteDoc.status === "generated")
+                ? " При необходимости будет сформирована накладная."
+                : null}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => setFastCompleteConfirmOpen(false)}
+                className={`rounded-md border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-600 ${focusRing}`}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => void handleFastCompleteConfirm()}
+                className={`rounded-md bg-[#0F766E] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5f58] disabled:opacity-50 ${focusRing}`}
+              >
+                Быстро завершить
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="mt-8 flex flex-col gap-8">

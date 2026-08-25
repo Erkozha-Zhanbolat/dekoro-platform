@@ -1670,7 +1670,8 @@ export type OrderActivityEventType =
   | "payment_claimed"
   | "invoice_generation_failed"
   | "item_price_overridden"
-  | "item_price_reset";
+  | "item_price_reset"
+  | "fast_completed_by_staff";
 
 export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string> = {
   manager_assigned: "Менеджер назначен",
@@ -1684,6 +1685,7 @@ export const ORDER_ACTIVITY_EVENT_LABELS: Record<OrderActivityEventType, string>
   invoice_generation_failed: "Не удалось сформировать счёт",
   item_price_overridden: "Цена позиции изменена менеджером",
   item_price_reset: "Ручная цена позиции сброшена",
+  fast_completed_by_staff: "Быстрое завершение заказа",
 };
 
 /** Staff in-app notification types (029 + 030_workflow_notifications.sql). */

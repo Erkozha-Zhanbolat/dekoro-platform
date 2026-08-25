@@ -730,6 +730,52 @@ export function getAllowedStatusTransitions(from: OrderStatus): OrderStatus[] {
   return map[from];
 }
 
+export type StaffFastCompleteResult = {
+  order_id: string;
+  order_status: OrderStatus;
+  idempotent: boolean;
+  steps: OrderStatus[];
+};
+
+export {
+  canStaffFastCompleteOrder,
+  FAST_COMPLETE_ELIGIBLE_STATUSES,
+  getFastCompleteRemainingSteps,
+} from "./orders.fastComplete";
+
+export async function fastCompleteStaffOrder(
+  orderId: string,
+): Promise<StaffFastCompleteResult> {
+  const { data, error } = await supabase.rpc("staff_fast_complete_order", {
+    p_order_id: orderId,
+  });
+  if (error) {
+    throw new Error(error.message || "Не удалось быстро завершить заказ");
+  }
+
+  const row = data as {
+    order_id?: string;
+    order_status?: string;
+    idempotent?: boolean;
+    steps?: unknown;
+  } | null;
+
+  if (!row?.order_id || !row.order_status) {
+    throw new Error("Не удалось быстро завершить заказ");
+  }
+
+  const steps = Array.isArray(row.steps)
+    ? row.steps.filter((s): s is OrderStatus => typeof s === "string")
+    : [];
+
+  return {
+    order_id: row.order_id,
+    order_status: row.order_status as OrderStatus,
+    idempotent: Boolean(row.idempotent),
+    steps,
+  };
+}
+
 export function getStatusTransitionLabel(from: OrderStatus, to: OrderStatus): string {
   const labels: Record<string, string> = {
     "new->awaiting_payment": "На оплату",
