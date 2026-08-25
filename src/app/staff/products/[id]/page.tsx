@@ -546,8 +546,8 @@ export default function StaffProductDetailPage() {
                   </button>
                 )}
                 <p className="text-xs text-neutral-400">
-                  PNG / JPEG / WEBP, до {(PRODUCT_MAIN_PHOTO_MAX_BYTES / (1024 * 1024)).toFixed(0)} МБ.
-                  Только одно главное фото.
+                  PNG, JPG или WebP до {(PRODUCT_MAIN_PHOTO_MAX_BYTES / (1024 * 1024)).toFixed(0)} МБ.
+                  Изображение автоматически оптимизируется. Только одно главное фото.
                 </p>
                 {photoError && (
                   <p className="text-sm text-red-600" role="alert">

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { optimizeProductImage } from "@/lib/staff/optimizeProductImage";
 import { setStaffProductMainPhoto } from "@/lib/staff/products";
 import type { StaffProductDetails } from "@/types/database";
 
@@ -98,33 +99,75 @@ export async function getProductMainPhotoSignedUrl(
   return data.signedUrl;
 }
 
-/** Upload/replace the single main photo for a product. */
+async function removeStoragePathBestEffort(path: string): Promise<void> {
+  try {
+    await supabase.storage.from(PRODUCT_IMAGES_BUCKET).remove([path]);
+  } catch {
+    // Orphan scan / retry later — do not fail the primary operation.
+  }
+}
+
+/**
+ * Upload/replace the single main photo for a product.
+ * Browser-optimizes to WebP when smaller; never deletes the previous object
+ * until Storage upload + DB path update both succeed.
+ */
 export async function uploadProductMainPhoto(
   productId: string,
   file: File,
   previousPath?: string | null,
 ): Promise<StaffProductDetails> {
-  const ext = assertAllowedFile(file);
-  const path = productMainPhotoPath(productId, ext);
+  assertAllowedFile(file);
+
+  const prepared = await optimizeProductImage(file);
+  if (prepared.file.size > PRODUCT_MAIN_PHOTO_MAX_BYTES) {
+    throw new Error("Максимальный размер фото — 5 МБ");
+  }
+
+  const path = productMainPhotoPath(productId, prepared.ext);
+  const replacingDifferentPath = Boolean(
+    previousPath && previousPath !== path,
+  );
+
+  if (replacingDifferentPath && previousPath) {
+    assertProductPhotoPath(previousPath, productId);
+  }
 
   const { error: uploadError } = await supabase.storage
     .from(PRODUCT_IMAGES_BUCKET)
-    .upload(path, file, {
+    .upload(path, prepared.file, {
       upsert: true,
-      contentType: file.type,
+      contentType: prepared.mime,
       cacheControl: "3600",
     });
 
   if (uploadError) {
+    // Previous object untouched when upload fails (new path) or left as-is
+    // when same-path upsert never completed.
     throw new Error(uploadError.message || "Не удалось загрузить фото");
   }
 
-  if (previousPath && previousPath !== path) {
-    assertProductPhotoPath(previousPath, productId);
-    await supabase.storage.from(PRODUCT_IMAGES_BUCKET).remove([previousPath]);
-  }
+  try {
+    const details = await setStaffProductMainPhoto(productId, path);
 
-  return setStaffProductMainPhoto(productId, path);
+    if (replacingDifferentPath && previousPath) {
+      // Best-effort: DB already points at the new path.
+      await removeStoragePathBestEffort(previousPath);
+    }
+
+    return details;
+  } catch (error: unknown) {
+    // Upload of a *new* path succeeded but DB did not — drop the orphan so
+    // the catalog still resolves previousPath. Same-path upsert cannot restore
+    // prior bytes; leave the object and rethrow.
+    if (replacingDifferentPath || !previousPath) {
+      await removeStoragePathBestEffort(path);
+    }
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Не удалось сохранить фото");
+  }
 }
 
 export async function clearProductMainPhoto(
