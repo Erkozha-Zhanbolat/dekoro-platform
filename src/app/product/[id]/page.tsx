@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import SupabaseProductPage from "@/components/SupabaseProductPage";
 
@@ -17,5 +18,15 @@ export default async function ProductPage({
     notFound();
   }
 
-  return <SupabaseProductPage productId={id} />;
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-5xl px-6 py-16 text-center text-neutral-500">
+          Загрузка товара...
+        </div>
+      }
+    >
+      <SupabaseProductPage productId={id} />
+    </Suspense>
+  );
 }

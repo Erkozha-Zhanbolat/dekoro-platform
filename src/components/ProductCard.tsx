@@ -8,6 +8,7 @@ import { formatPrice } from "@/lib/formatPrice";
 import { computeDiscountPercent } from "@/lib/pricing";
 import { getAvailableStock } from "@/lib/inventory";
 import { cartAddedToastCopy } from "@/lib/toastFeedback";
+import { buildProductHref } from "@/lib/catalogReturnPath";
 import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
 import FavoriteButton from "@/components/FavoriteButton";
@@ -21,17 +22,27 @@ type ProductCardProps = {
   product: Product;
   /** Override image loading; first viewport cards may use eager. */
   imageLoading?: "lazy" | "eager";
+  /**
+   * When set (storefront catalog), product links carry `?from=` so
+   * «Назад в каталог» can restore search/category. Source of truth: actual
+   * catalog URL, not debounced React state.
+   */
+  catalogReturnHref?: string;
 };
 
 export default function ProductCard({
   product,
   imageLoading = "lazy",
+  catalogReturnHref,
 }: ProductCardProps) {
   const { items, addToCart } = useCart();
   const toast = useToast();
   const availableStock = getAvailableStock(product);
   const isOutOfStock = availableStock <= 0;
-  const productHref = `/product/${product.id}`;
+  const productHref = useMemo(
+    () => buildProductHref(product.id, catalogReturnHref),
+    [product.id, catalogReturnHref],
+  );
 
   const quantityInCart = useMemo(
     () => items.find((item) => item.product.id === product.id)?.quantity ?? 0,

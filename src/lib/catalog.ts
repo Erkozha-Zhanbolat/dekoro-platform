@@ -128,27 +128,57 @@ export type CatalogPageResult = {
   hasMore: boolean;
 };
 
-/**
- * One page of the storefront catalog (migration 046).
- * Sort matches Stage 45; search/category are applied server-side before LIMIT/OFFSET.
- */
-export async function getCatalogPage(options: {
+/** In-memory TTL for storefront catalog pages (price/stock stay within this window). */
+export const CATALOG_PAGE_CACHE_TTL_MS = 30_000;
+
+type CatalogPageCacheEntry = {
+  expiresAt: number;
+  result: CatalogPageResult;
+};
+
+const catalogPageCache = new Map<string, CatalogPageCacheEntry>();
+const catalogPageInflight = new Map<string, Promise<CatalogPageResult>>();
+
+function normalizeCatalogPageParams(options: {
   limit?: number;
   search?: string | null;
   category?: string | null;
   offset?: number;
-}): Promise<CatalogPageResult> {
-  const limit = Math.min(
-    Math.max(options.limit ?? CATALOG_PAGE_SIZE, 1),
-    100,
-  );
-  const offset = Math.max(options.offset ?? 0, 0);
+}): {
+  limit: number;
+  offset: number;
+  search: string | null;
+  category: string | null;
+} {
+  return {
+    limit: Math.min(Math.max(options.limit ?? CATALOG_PAGE_SIZE, 1), 100),
+    offset: Math.max(options.offset ?? 0, 0),
+    search: options.search?.trim() || null,
+    category: options.category?.trim() || null,
+  };
+}
 
+/** Cache key includes auth identity because sale_price comes from get_product_price(auth.uid()). */
+function catalogPageCacheKey(
+  userKey: string,
+  params: ReturnType<typeof normalizeCatalogPageParams>,
+): string {
+  return `catalog:user=${userKey}:q=${params.search ?? ""}:category=${params.category ?? ""}:offset=${params.offset}:limit=${params.limit}`;
+}
+
+async function resolveCatalogPageUserKey(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.id ?? "anon";
+}
+
+async function fetchCatalogPageFromRpc(
+  params: ReturnType<typeof normalizeCatalogPageParams>,
+): Promise<CatalogPageResult> {
   const { data, error } = await supabase.rpc("get_catalog_page", {
-    p_limit: limit,
-    p_search: options.search?.trim() || null,
-    p_category: options.category?.trim() || null,
-    p_offset: offset,
+    p_limit: params.limit,
+    p_search: params.search,
+    p_category: params.category,
+    p_offset: params.offset,
   });
 
   if (error) {
@@ -162,17 +192,58 @@ export async function getCatalogPage(options: {
     return product;
   });
   const totalCount = rows.length > 0 ? Number(rows[0].total_count) || 0 : 0;
-  const nextOffset = offset + products.length;
+  const nextOffset = params.offset + products.length;
 
   return {
     products,
     totalCount,
     nextOffset,
     // More rows exist when this page was full and we have not reached total_count.
-    hasMore:
-      products.length > 0
-      && nextOffset < totalCount,
+    hasMore: products.length > 0 && nextOffset < totalCount,
   };
+}
+
+/**
+ * One page of the storefront catalog (migration 046).
+ * Sort matches Stage 45; search/category are applied server-side before LIMIT/OFFSET.
+ *
+ * Tab-local in-memory cache (30s TTL) + in-flight dedupe. Not persisted.
+ */
+export async function getCatalogPage(options: {
+  limit?: number;
+  search?: string | null;
+  category?: string | null;
+  offset?: number;
+}): Promise<CatalogPageResult> {
+  const params = normalizeCatalogPageParams(options);
+  const userKey = await resolveCatalogPageUserKey();
+  const cacheKey = catalogPageCacheKey(userKey, params);
+  const now = Date.now();
+
+  const cached = catalogPageCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.result;
+  }
+
+  const inflight = catalogPageInflight.get(cacheKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const request = fetchCatalogPageFromRpc(params)
+    .then((result) => {
+      catalogPageCache.set(cacheKey, {
+        expiresAt: Date.now() + CATALOG_PAGE_CACHE_TTL_MS,
+        result,
+      });
+      return result;
+    })
+    .finally(() => {
+      catalogPageInflight.delete(cacheKey);
+    });
+
+  catalogPageInflight.set(cacheKey, request);
+  return request;
 }
 
 /** Active top-level category names for storefront filter chips (046). */

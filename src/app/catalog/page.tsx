@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import { useAuth } from "@/context/AuthContext";
 import { trackEvent } from "@/lib/analytics/track";
@@ -15,7 +23,7 @@ import type { Product } from "@/types/product";
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
-const SEARCH_DEBOUNCE_MS = 300;
+const SEARCH_DEBOUNCE_MS = 450;
 
 function categoryButtonClass(isActive: boolean) {
   return `rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${focusRing} ${
@@ -40,13 +48,57 @@ function mergeUniqueProducts(current: Product[], incoming: Product[]): Product[]
   return next;
 }
 
+function readCatalogQuery(searchParams: URLSearchParams | { get: (key: string) => string | null }): string {
+  return searchParams.get("q")?.trim() ?? "";
+}
+
+function readCatalogCategory(
+  searchParams: URLSearchParams | { get: (key: string) => string | null },
+): string | null {
+  const value = searchParams.get("category")?.trim() ?? "";
+  return value.length > 0 ? value : null;
+}
+
+function buildCatalogHref(query: string, category: string | null): string {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (category) params.set("category", category);
+  const qs = params.toString();
+  return qs ? `/catalog?${qs}` : "/catalog";
+}
+
+function catalogFilterKey(query: string, category: string | null): string {
+  return JSON.stringify({ q: query, category });
+}
+
 export default function CatalogPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-6xl px-6 py-12">
+          <h1 className="text-3xl font-bold text-neutral-800">Каталог</h1>
+          <p className="mt-10 text-center text-neutral-500">Загрузка каталога...</p>
+        </div>
+      }
+    >
+      <CatalogPageContent />
+    </Suspense>
+  );
+}
+
+function CatalogPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const currentUserId = user?.id ?? null;
 
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [category, setCategory] = useState<string | null>(null);
+  const [query, setQuery] = useState(() => readCatalogQuery(searchParams));
+  const [debouncedQuery, setDebouncedQuery] = useState(() =>
+    readCatalogQuery(searchParams),
+  );
+  const [category, setCategory] = useState<string | null>(() =>
+    readCatalogCategory(searchParams),
+  );
   const [categoryNames, setCategoryNames] = useState<string[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -65,6 +117,16 @@ export default function CatalogPage() {
   const analyticsSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSearch = useRef<string>("");
   const lastCategory = useRef<string | null>(null);
+  const lastWrittenFilterKeyRef = useRef<string | null>(
+    catalogFilterKey(readCatalogQuery(searchParams), readCatalogCategory(searchParams)),
+  );
+  const applyingUrlToStateRef = useRef(false);
+
+  // Actual catalog URL (source of truth for product «from»), not debounced state.
+  const catalogReturnHref = useMemo(() => {
+    const qs = searchParams.toString();
+    return qs ? `/catalog?${qs}` : "/catalog";
+  }, [searchParams]);
 
   useEffect(() => {
     productsRef.current = products;
@@ -73,6 +135,21 @@ export default function CatalogPage() {
   useEffect(() => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
+
+  // Restore UI state when URL changes via Back/Forward (ignore our own replace writes).
+  useEffect(() => {
+    const nextQuery = readCatalogQuery(searchParams);
+    const nextCategory = readCatalogCategory(searchParams);
+    const key = catalogFilterKey(nextQuery, nextCategory);
+    if (lastWrittenFilterKeyRef.current === key) {
+      return;
+    }
+    applyingUrlToStateRef.current = true;
+    lastWrittenFilterKeyRef.current = key;
+    setQuery(nextQuery);
+    setDebouncedQuery(nextQuery);
+    setCategory(nextCategory);
+  }, [searchParams]);
 
   useEffect(() => {
     if (searchTimer.current) {
@@ -87,6 +164,28 @@ export default function CatalogPage() {
       }
     };
   }, [query]);
+
+  // Persist search/category in the URL (no full reload; scroll preserved).
+  useEffect(() => {
+    if (applyingUrlToStateRef.current) {
+      applyingUrlToStateRef.current = false;
+      return;
+    }
+
+    const key = catalogFilterKey(debouncedQuery, category);
+    lastWrittenFilterKeyRef.current = key;
+
+    const currentParams = new URLSearchParams(window.location.search);
+    const currentKey = catalogFilterKey(
+      readCatalogQuery(currentParams),
+      readCatalogCategory(currentParams),
+    );
+    if (currentKey === key) {
+      return;
+    }
+
+    router.replace(buildCatalogHref(debouncedQuery, category), { scroll: false });
+  }, [category, debouncedQuery, router]);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -318,6 +417,7 @@ export default function CatalogPage() {
                     key={product.id}
                     product={product}
                     imageLoading={index < 8 ? "eager" : "lazy"}
+                    catalogReturnHref={catalogReturnHref}
                   />
                 ))}
               </div>

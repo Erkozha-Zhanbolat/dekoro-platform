@@ -10,6 +10,7 @@ import { getCartPricing } from "@/lib/cartPricing";
 import type { CartPricingRow } from "@/lib/cartPricing";
 import { getAvailableStock } from "@/lib/inventory";
 import { cartAddedToastCopy } from "@/lib/toastFeedback";
+import { safeCatalogReturnPath } from "@/lib/catalogReturnPath";
 import { ProductMedia } from "@/components/ProductMedia";
 import { QuantitySelector } from "@/components/QuantitySelector";
 import FavoriteButton from "@/components/FavoriteButton";
@@ -19,7 +20,15 @@ import type { Product } from "@/types/product";
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
 
-export default function ProductDetail({ product }: { product: Product }) {
+export default function ProductDetail({
+  product,
+  catalogHref = "/catalog",
+}: {
+  product: Product;
+  /** Candidate catalog return path; validated before use. */
+  catalogHref?: string;
+}) {
+  const backToCatalogHref = safeCatalogReturnPath(catalogHref);
   const { items, addToCart } = useCart();
   const toast = useToast();
   const availableStock = getAvailableStock(product);
@@ -95,7 +104,7 @@ export default function ProductDetail({ product }: { product: Product }) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
       <Link
-        href="/catalog"
+        href={backToCatalogHref}
         className={`text-sm font-medium text-neutral-500 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
       >
         ← Назад в каталог

@@ -4,13 +4,64 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import type { SVGProps } from "react";
+import type { User } from "@supabase/supabase-js";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
 import { useFavorites } from "@/context/FavoritesContext";
-import { canAccessStaff } from "@/types/database";
+import { canAccessStaff, type Company, type Profile } from "@/types/database";
 import { enableQuickOrder, useSupabaseCatalog, useSupabaseFavorites } from "@/lib/featureFlags";
 import ClientNotificationBell from "@/components/ClientNotificationBell";
+
+const DEFAULT_PROFILE_LABEL = "Профиль";
+
+function metaString(metadata: User["user_metadata"], key: string): string | null {
+  const value = metadata?.[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Header label for the profile link.
+ * Uses data already in Auth/Profile providers — no extra fetch.
+ */
+function resolveHeaderProfileLabel(
+  user: User | null,
+  profile: Profile | null,
+  company: Company | null,
+): string {
+  if (!user) {
+    return DEFAULT_PROFILE_LABEL;
+  }
+
+  const fromProfile = profile?.full_name?.trim();
+  if (fromProfile) {
+    return fromProfile;
+  }
+
+  const fromCompany = company?.name?.trim();
+  if (fromCompany) {
+    return fromCompany;
+  }
+
+  const metadata = user.user_metadata ?? {};
+  const fromMeta =
+    metaString(metadata, "name")
+    ?? metaString(metadata, "contact_person")
+    ?? metaString(metadata, "full_name")
+    ?? metaString(metadata, "company_name");
+  if (fromMeta) {
+    return fromMeta;
+  }
+
+  const emailLocal = user.email?.split("@")[0]?.trim();
+  if (emailLocal) {
+    return emailLocal;
+  }
+
+  return DEFAULT_PROFILE_LABEL;
+}
 
 // Shared by both the desktop nav and the mobile menu below, so the Quick
 // Order link only needs to be added/removed here, once, to affect both.
@@ -119,9 +170,10 @@ export default function Header() {
   const pathname = usePathname();
   const { totalQuantity } = useCart();
   const { user, needsPasswordSetup } = useAuth();
-  const { profile } = useProfile();
+  const { profile, company } = useProfile();
   const { favoriteProductIds } = useFavorites();
   const profileHref = user ? "/profile" : "/login";
+  const profileLabel = resolveHeaderProfileLabel(user, profile, company);
   // Local (static catalog) favorites work for guests too, so the count is
   // always shown there. In Supabase mode favorites are per signed-in user,
   // so the count only makes sense once someone is authenticated.
@@ -213,10 +265,12 @@ export default function Header() {
               </Link>
               <Link
                 href={profileHref}
-                className={`flex items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm ${focusRing}`}
+                title={profileLabel}
+                aria-label={profileLabel}
+                className={`flex max-w-[11rem] items-center gap-2 text-sm font-medium text-neutral-600 transition-colors hover:text-[#0F766E] rounded-sm lg:max-w-[14rem] ${focusRing}`}
               >
-                <ProfileIcon className="h-5 w-5" />
-                Профиль
+                <ProfileIcon className="h-5 w-5 shrink-0" />
+                <span className="truncate">{profileLabel}</span>
               </Link>
             </nav>
 
@@ -299,9 +353,11 @@ export default function Header() {
             <Link
               href={profileHref}
               onClick={() => setIsMenuOpen(false)}
+              title={profileLabel}
+              aria-label={profileLabel}
               className={`rounded-md px-2 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 hover:text-[#0F766E] ${focusRing}`}
             >
-              Профиль
+              <span className="block truncate">{profileLabel}</span>
             </Link>
           </nav>
         </div>

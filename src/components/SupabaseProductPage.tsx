@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useCatalog } from "@/context/CatalogContext";
 import ProductDetail from "@/components/ProductDetail";
+import { safeCatalogReturnPath } from "@/lib/catalogReturnPath";
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F766E] focus-visible:ring-offset-2";
@@ -13,6 +15,8 @@ const focusRing =
 // on the client instead of the static data file, then renders the exact
 // same ProductDetail component so the page looks identical either way.
 export default function SupabaseProductPage({ productId }: { productId: string }) {
+  const searchParams = useSearchParams();
+  const catalogHref = safeCatalogReturnPath(searchParams.get("from"));
   const { products, loading, error, ensureCatalogLoaded } = useCatalog();
 
   useEffect(() => {
@@ -45,7 +49,7 @@ export default function SupabaseProductPage({ productId }: { productId: string }
           Возможно, товар был снят с продажи или ссылка устарела.
         </p>
         <Link
-          href="/catalog"
+          href={catalogHref}
           className={`mt-6 inline-block rounded-md bg-[#0F766E] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0c5f58] ${focusRing}`}
         >
           Перейти в каталог
@@ -54,5 +58,5 @@ export default function SupabaseProductPage({ productId }: { productId: string }
     );
   }
 
-  return <ProductDetail product={product} />;
+  return <ProductDetail product={product} catalogHref={catalogHref} />;
 }
